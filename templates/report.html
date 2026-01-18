@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Báo Cáo Tổng Hợp{% endblock %}
+
+{% block content %}
+<style>
+    .report-container { width: 95%; max-width: 1200px; margin: 30px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    .filter-bar { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; display: flex; align-items: center; gap: 15px; }
+    .btn-filter { background: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
+    .btn-export { background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+    th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
+    th { background-color: #343a40; color: white; }
+    tr:nth-child(even) { background-color: #f2f2f2; }
+    .section-title { border-left: 5px solid #007bff; padding-left: 10px; margin: 30px 0 15px 0; color: #333; }
+</style>
+
+<div class="report-container">
+    <h1 style="text-align: center; margin-bottom: 30px;">Báo Cáo Năng Suất Lao Động</h1>
+
+    <!-- Bộ lọc ngày -->
+    <form method="GET" action="{{ url_for('report') }}" class="filter-bar">
+        <label><strong>Từ ngày:</strong></label>
+        <input type="date" name="from_date" value="{{ from_date or '' }}" style="padding: 5px;">
+        
+        <label><strong>Đến ngày:</strong></label>
+        <input type="date" name="to_date" value="{{ to_date or '' }}" style="padding: 5px;">
+        
+        <button type="submit" class="btn-filter">Xem Báo Cáo</button>
+        
+        {% if records %}
+        <a href="{{ url_for('export_report', from_date=from_date, to_date=to_date) }}" class="btn-export" style="margin-left: auto;">
+            <i class="fa fa-file-excel-o"></i> Xuất Excel
+        </a>
+        {% endif %}
+    </form>
+
+    {% if summary %}
+    <!-- Biểu đồ Top 5 -->
+    <div style="width: 100%; max-width: 900px; margin: 0 auto 50px auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+        <h2 style="text-align: center; color: #333; margin-bottom: 20px;">Top 5 Nhân Viên Năng Suất Cao Nhất</h2>
+        <canvas id="topEmployeesChart"></canvas>
+    </div>
+
+    <!-- Bảng Tổng Hợp Nhân Viên -->
+    <h2 class="section-title">1. Tổng Hợp Năng Suất Nhân Viên</h2>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Tên Nhân Viên</th>
+                    <th>Vai Trò</th>
+                    <th>Số Lượng Cont/Xe Tham Gia</th>
+                    <th>Tổng Sản Lượng (Quy đổi)</th>
+                    <th>Ghi chú</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in summary %}
+                <tr {% if item.remark %}style="background-color: #fff3cd;"{% endif %}>
+                    <td style="font-weight: bold;">{{ item.name }}</td>
+                    <td>{{ item.role }}</td>
+                    <td>{{ item.count }}</td>
+                    <td style="color: #0056b3; font-weight: bold;">{{ "{:,.2f}".format(item.total_qty) }}</td>
+                    <td style="color: #dc3545; font-weight: bold;">{{ item.remark }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if customer_summary %}
+    <!-- Biểu đồ Khách hàng -->
+    <div style="width: 100%; max-width: 900px; margin: 0 auto 50px auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+        <h2 style="text-align: center; color: #333; margin-bottom: 20px;">Tỷ Trọng Sản Lượng Theo Khách Hàng</h2>
+        <canvas id="customerChart"></canvas>
+    </div>
+
+    <!-- Bảng Tổng Hợp Khách Hàng -->
+    <h2 class="section-title">2. Tổng Hợp Theo Khách Hàng</h2>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Khách Hàng</th>
+                    <th>Số Lượng Cont/Xe</th>
+                    <th>Tổng Sản Lượng (Quy đổi)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in customer_summary %}
+                <tr>
+                    <td style="font-weight: bold;">{{ item.name }}</td>
+                    <td>{{ item.count }}</td>
+                    <td style="color: #0056b3; font-weight: bold;">{{ "{:,.2f}".format(item.total_qty) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if records %}
+    <!-- Bảng Chi Tiết -->
+    <h2 class="section-title">3. Chi Tiết Nhật Ký Làm Việc</h2>
+    <div style="overflow-x: auto; max-height: 600px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ngày</th>
+                    <th>Số Cont/Xe</th>
+                    <th>Task</th>
+                    <th>Account</th>
+                    <th>Sản Lượng</th>
+                    <th>Đơn vị</th>
+                    <th>Tally</th>
+                    <th>Xe Nâng</th>
+                    <th>Công Nhân</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in records %}
+                <tr>
+                    <td>{{ r.work_date.strftime('%d/%m/%Y') if r.work_date else '' }}</td>
+                    <td>{{ r.ref_no }}</td>
+                    <td>{{ r.task_id }}</td>
+                    <td>{{ r.account_id }}</td>
+                    <td>{{ "{:,.2f}".format(r.quantity) if r.quantity else 0 }}</td>
+                    <td>{{ r.unit }}</td>
+                    <td>{{ r.tally_id or '' }}</td>
+                    <td>{{ r.xenang_id or '' }}</td>
+                    <td>
+                        {{ [r.congnhan1_id, r.congnhan2_id, r.congnhan3_id, r.congnhan4_id, r.congnhan5_id, r.congnhan6_id] | select("ne", None) | join(", ") }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif request.args.get('from_date') %}
+        <p style="text-align: center; margin-top: 20px; color: #777;">Không tìm thấy dữ liệu trong khoảng thời gian này.</p>
+    {% endif %}
+</div>
+
+<!-- Thêm thư viện Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    {% if top_employees %}
+    document.addEventListener("DOMContentLoaded", function() {
+        const ctx = document.getElementById('topEmployeesChart').getContext('2d');
+        
+        // Chuẩn bị dữ liệu từ server
+        const labels = [{% for item in top_employees %}"{{ item.name }} ({{ item.role }})",{% endfor %}];
+        const data = [{% for item in top_employees %}{{ item.total_qty }},{% endfor %}];
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Tổng Sản Lượng (Quy đổi)',
+                    data: data,
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    });
+    {% endif %}
+
+    {% if customer_summary %}
+    document.addEventListener("DOMContentLoaded", function() {
+        const ctxCust = document.getElementById('customerChart').getContext('2d');
+        const labelsCust = [{% for item in customer_summary %}"{{ item.name }}",{% endfor %}];
+        const dataCust = [{% for item in customer_summary %}{{ item.total_qty }},{% endfor %}];
+        
+        // Màu ngẫu nhiên cho biểu đồ tròn
+        const backgroundColors = labelsCust.map(() => `rgba(${Math.floor(Math.random()*200)}, ${Math.floor(Math.random()*200)}, ${Math.floor(Math.random()*200)}, 0.7)`);
+
+        new Chart(ctxCust, {
+            type: 'pie',
+            data: {
+                labels: labelsCust,
+                datasets: [{
+                    label: 'Sản Lượng',
+                    data: dataCust,
+                    backgroundColor: backgroundColors,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'right' },
+                    title: { display: true, text: 'Tỷ trọng sản lượng' }
+                }
+            }
+        });
+    });
+    {% endif %}
+</script>
+{% endblock %}

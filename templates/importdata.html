@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+
+{% block title %}Import Dữ Liệu{% endblock %}
+
+{% block content %}
+<style>
+    .import-container {
+        width: 90%;
+        max-width: 800px;
+        margin: 40px auto;
+        background-color: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    .btn-download {
+        background-color: #17a2b8;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        text-decoration: none;
+        display: inline-block;
+        margin-bottom: 20px;
+    }
+    .btn-download:hover {
+        background-color: #138496;
+    }
+    .upload-area {
+        border: 2px dashed #ddd;
+        padding: 40px;
+        border-radius: 8px;
+        margin-top: 20px;
+        background-color: #f9f9f9;
+    }
+    .btn-upload {
+        background-color: #28a745;
+        color: white;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        margin-top: 15px;
+    }
+    .btn-upload:hover {
+        background-color: #218838;
+    }
+    input[type="file"] {
+        display: block;
+        margin: 0 auto 15px auto;
+    }
+    .alert {
+        padding: 15px;
+        margin-bottom: 20px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        text-align: left;
+    }
+    .alert-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+    .alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+
+    /* Modal Styles */
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+    .modal-content { background-color: #fefefe; margin: 10% auto; padding: 30px; border: 1px solid #888; width: 500px; border-radius: 8px; position: relative; text-align: left; }
+    .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close:hover { color: black; }
+    .form-group { margin-bottom: 15px; }
+    
+    /* Edit Modal Specifics */
+    .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .full-width { grid-column: span 2; }
+</style>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div style="width: 90%; max-width: 800px; margin: 20px auto;">
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<div class="import-container">
+    <h1>Import Dữ Liệu Làm Nhập/Xuất/Pick</h1>
+    <div style="text-align: right; margin-bottom: 20px;">
+        <button class="btn-download" onclick="openImportModal()" style="margin-bottom: 0;">+ Import Excel</button>
+    </div>
+    <hr style="border-top: 1px solid #eee; margin: 20px 0;">
+
+    <!-- Bảng dữ liệu tạm (Preview) -->
+    {% if temp_records %}
+    <div style="margin-top: 20px; text-align: left; border: 2px solid #ffc107; padding: 20px; border-radius: 8px; background-color: #fff3cd;">
+        <h2 style="color: #856404; margin-top: 0;">Dữ Liệu Xem Trước (Chưa Lưu)</h2>
+        <p>Vui lòng kiểm tra kỹ dữ liệu bên dưới. Nhấn <strong>"Lưu Chính Thức"</strong> để cập nhật vào hệ thống hoặc <strong>"Hủy Bỏ"</strong> để xóa.</p>
+        
+        <div style="margin-bottom: 15px;">
+            <form action="{{ url_for('confirm_import') }}" method="POST" style="display: inline;">
+                <button type="submit" class="btn-upload" style="margin-top: 0;">Lưu Chính Thức</button>
+            </form>
+            <form action="{{ url_for('cancel_import') }}" method="POST" style="display: inline; margin-left: 10px;">
+                <button type="submit" class="btn-download" style="background-color: #dc3545; margin-bottom: 0;">Hủy Bỏ</button>
+            </form>
+        </div>
+
+        <div style="overflow-x: auto; max-height: 400px; overflow-y: auto; background: white;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background-color: #e9ecef;">
+                        <th style="padding: 8px; border: 1px solid #ddd;">Date</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Số Cont/Xe</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">CBM</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Tally</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Xe Nâng</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Task</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Account</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Khách Hàng</th>
+                        <th style="padding: 8px; border: 1px solid #ddd; width: 120px;">Hành động</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in temp_records %}
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.date }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.container_no }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.cbm }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.tally }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.lift_truck }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.task }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.account }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.customer }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">
+                            <button class="btn-edit" style="background-color: #ffc107; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;"
+                                data-id="{{ item.id }}"
+                                data-date="{{ item.date }}"
+                                data-container="{{ item.container_no }}"
+                                data-cbm="{{ item.cbm }}"
+                                data-tally="{{ item.tally }}"
+                                data-lift="{{ item.lift_truck }}"
+                                data-w1="{{ item.worker_1 }}" data-w2="{{ item.worker_2 }}"
+                                data-w3="{{ item.worker_3 }}" data-w4="{{ item.worker_4 }}"
+                                data-w5="{{ item.worker_5 }}" data-w6="{{ item.worker_6 }}"
+                                data-task="{{ item.task }}"
+                                data-account="{{ item.account }}"
+                                data-customer="{{ item.customer }}"
+                                onclick="openEditTempModal(this)">Sửa</button>
+                            <form action="{{ url_for('delete_temp_data', id=item.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Xóa dòng này?');">
+                                <button type="submit" style="background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 5px;">Xóa</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <hr style="border-top: 1px solid #eee; margin: 40px 0;">
+    {% endif %}
+
+    <!-- Bảng hiển thị dữ liệu đã import -->
+    <div style="margin-top: 40px; text-align: left;">
+        <h2>Dữ Liệu Đã Import</h2>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+                <thead>
+                    <tr style="background-color: #f8f9fa;">
+                        <th style="padding: 10px; border: 1px solid #ddd;">Date</th>
+                        <th style="padding: 10px; border: 1px solid #ddd;">Số Cont/Xe</th>
+                        <th style="padding: 10px; border: 1px solid #ddd;">CBM</th>
+                        <th style="padding: 10px; border: 1px solid #ddd;">Tally</th>
+                        <th style="padding: 10px; border: 1px solid #ddd;">Xe Nâng</th>
+                        <th style="padding: 10px; border: 1px solid #ddd;">Task</th>
+                        <th style="padding: 10px; border: 1px solid #ddd;">Account</th>
+                        <th style="padding: 10px; border: 1px solid #ddd;">Khách Hàng</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if records and records.items %}
+                        {% for item in records.items %}
+                        <tr>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.date }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.container_no }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.cbm }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.tally }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.lift_truck }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.task }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.account }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.customer }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="8" style="text-align: center; padding: 20px;">Chưa có dữ liệu</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Phân trang -->
+        {% if records and records.pages > 1 %}
+        <div style="margin-top: 20px; text-align: center;">
+            {% for page_num in records.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                    <a href="{{ url_for('import_data', page=page_num) }}" style="padding: 5px 10px; border: 1px solid #ddd; margin: 0 2px; text-decoration: none; {{ 'background-color: #333; color: white;' if page_num == records.page else '' }}">{{ page_num }}</a>
+                {% else %} ... {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal Import -->
+<div id="importModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="document.getElementById('importModal').style.display='none'">&times;</span>
+    <h2 style="margin-top: 0; text-align: center;">Import Dữ Liệu</h2>
+    
+    <div style="text-align: center; margin-bottom: 20px;">
+        <p>Bước 1: Tải xuống file mẫu</p>
+        <a href="{{ url_for('download_template') }}" class="btn-download" style="padding: 8px 16px; font-size: 14px; margin-bottom: 0;">
+            <i class="fa fa-download"></i> Tải Template (.xlsx)
+        </a>
+    </div>
+
+    <hr style="border-top: 1px solid #eee; margin: 20px 0;">
+
+    <form method="POST" action="{{ url_for('import_data') }}" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="file" style="font-weight: bold;">Bước 2: Upload file dữ liệu</label>
+            <input type="file" name="file" id="file" accept=".xlsx, .xls" required style="width: 100%; margin-top: 10px;">
+        </div>
+        <button type="submit" class="btn-upload" style="width: 100%; margin-top: 10px;">Upload & Import</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Edit Temp Data -->
+<div id="editTempModal" class="modal">
+  <div class="modal-content" style="width: 700px; max-width: 90%;">
+    <span class="close" onclick="document.getElementById('editTempModal').style.display='none'">&times;</span>
+    <h2 style="margin-top: 0; text-align: center;">Chỉnh Sửa Dữ Liệu Tạm</h2>
+    
+    <form id="editTempForm" method="POST" action="">
+        <div class="edit-grid">
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" name="date" style="width: 100%; padding: 8px;">
+            </div>
+            <div class="form-group">
+                <label>Số Cont/Xe</label>
+                <input type="text" name="container_no" style="width: 100%; padding: 8px;">
+            </div>
+            <div class="form-group">
+                <label>Khách Hàng</label>
+                <input type="text" name="customer" style="width: 100%; padding: 8px;">
+            </div>
+            <div class="form-group">
+                <label>Account</label>
+                <input type="text" name="account" style="width: 100%; padding: 8px;">
+            </div>
+            <div class="form-group">
+                <label>Task</label>
+                <input type="text" name="task" style="width: 100%; padding: 8px;">
+            </div>
+            <div class="form-group">
+                <label>CBM</label>
+                <input type="number" step="0.01" name="cbm" style="width: 100%; padding: 8px;">
+            </div>
+            <div class="form-group">
+                <label>Tally</label>
+                <input type="text" name="tally" style="width: 100%; padding: 8px;">
+            </div>
+            <div class="form-group">
+                <label>Xe Nâng</label>
+                <input type="text" name="lift_truck" style="width: 100%; padding: 8px;">
+            </div>
+            
+            <!-- Workers -->
+            <div class="form-group"><label>Công nhân 1</label><input type="text" name="worker_1" style="width: 100%; padding: 8px;"></div>
+            <div class="form-group"><label>Công nhân 2</label><input type="text" name="worker_2" style="width: 100%; padding: 8px;"></div>
+            <div class="form-group"><label>Công nhân 3</label><input type="text" name="worker_3" style="width: 100%; padding: 8px;"></div>
+            <div class="form-group"><label>Công nhân 4</label><input type="text" name="worker_4" style="width: 100%; padding: 8px;"></div>
+            <div class="form-group"><label>Công nhân 5</label><input type="text" name="worker_5" style="width: 100%; padding: 8px;"></div>
+            <div class="form-group"><label>Công nhân 6</label><input type="text" name="worker_6" style="width: 100%; padding: 8px;"></div>
+        </div>
+        
+        <button type="submit" class="btn-upload" style="width: 100%; margin-top: 20px;">Cập Nhật</button>
+    </form>
+  </div>
+</div>
+
+<script>
+    function openImportModal() { document.getElementById('importModal').style.display = "block"; }
+    
+    window.onclick = function(event) { 
+        if (event.target == document.getElementById('importModal')) { document.getElementById('importModal').style.display = "none"; }
+        if (event.target == document.getElementById('editTempModal')) { document.getElementById('editTempModal').style.display = "none"; }
+    }
+
+    function openEditTempModal(btn) {
+        var modal = document.getElementById('editTempModal');
+        var form = document.getElementById('editTempForm');
+        
+        // Set action URL
+        form.action = "/import-data/update-temp/" + btn.getAttribute('data-id');
+        
+        // Fill data
+        form.querySelector('[name="date"]').value = btn.getAttribute('data-date');
+        form.querySelector('[name="container_no"]').value = btn.getAttribute('data-container');
+        form.querySelector('[name="cbm"]').value = btn.getAttribute('data-cbm');
+        form.querySelector('[name="tally"]').value = btn.getAttribute('data-tally');
+        form.querySelector('[name="lift_truck"]').value = btn.getAttribute('data-lift');
+        form.querySelector('[name="task"]').value = btn.getAttribute('data-task');
+        form.querySelector('[name="account"]').value = btn.getAttribute('data-account');
+        form.querySelector('[name="customer"]').value = btn.getAttribute('data-customer');
+        
+        form.querySelector('[name="worker_1"]').value = btn.getAttribute('data-w1');
+        form.querySelector('[name="worker_2"]').value = btn.getAttribute('data-w2');
+        form.querySelector('[name="worker_3"]').value = btn.getAttribute('data-w3');
+        form.querySelector('[name="worker_4"]').value = btn.getAttribute('data-w4');
+        form.querySelector('[name="worker_5"]').value = btn.getAttribute('data-w5');
+        form.querySelector('[name="worker_6"]').value = btn.getAttribute('data-w6');
+        
+        modal.style.display = "block";
+    }
+</script>
+{% endblock %}
