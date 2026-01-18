@@ -3,3 +3,6 @@ Flask-SQLAlchemy
 python-dotenv
 PyMySQL
 gunicorn
+pandas
+openpyxl
+Flask-Login
