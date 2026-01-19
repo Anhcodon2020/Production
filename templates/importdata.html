@@ -73,6 +73,26 @@
     /* Edit Modal Specifics */
     .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .full-width { grid-column: span 2; }
+
+    /* Progress Bar Styles */
+    .progress-container {
+        width: 100%;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        margin-top: 15px;
+        display: none; /* Ẩn mặc định */
+    }
+    .progress-bar {
+        width: 0%;
+        height: 25px;
+        background-color: #28a745;
+        text-align: center;
+        line-height: 25px;
+        color: white;
+        border-radius: 4px;
+        transition: width 0.2s;
+        font-size: 14px;
+    }
 </style>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -93,14 +113,18 @@
     <hr style="border-top: 1px solid #eee; margin: 20px 0;">
 
     <!-- Bảng dữ liệu tạm (Preview) -->
-    {% if temp_records %}
+    {% if preview_data %}
     <div style="margin-top: 20px; text-align: left; border: 2px solid #ffc107; padding: 20px; border-radius: 8px; background-color: #fff3cd;">
         <h2 style="color: #856404; margin-top: 0;">Dữ Liệu Xem Trước (Chưa Lưu)</h2>
+        {% if has_errors %}
+        <p style="color: #721c24; font-weight: bold;">Có lỗi trong dữ liệu. Vui lòng sửa các dòng được đánh dấu màu đỏ hoặc xóa chúng trước khi lưu.</p>
+        {% else %}
         <p>Vui lòng kiểm tra kỹ dữ liệu bên dưới. Nhấn <strong>"Lưu Chính Thức"</strong> để cập nhật vào hệ thống hoặc <strong>"Hủy Bỏ"</strong> để xóa.</p>
+        {% endif %}
         
         <div style="margin-bottom: 15px;">
             <form action="{{ url_for('confirm_import') }}" method="POST" style="display: inline;">
-                <button type="submit" class="btn-upload" style="margin-top: 0;">Lưu Chính Thức</button>
+                <button type="submit" class="btn-upload" style="margin-top: 0;" {% if has_errors %}disabled title="Không thể lưu khi còn dữ liệu lỗi"{% endif %}>Lưu Chính Thức</button>
             </form>
             <form action="{{ url_for('cancel_import') }}" method="POST" style="display: inline; margin-left: 10px;">
                 <button type="submit" class="btn-download" style="background-color: #dc3545; margin-bottom: 0;">Hủy Bỏ</button>
@@ -123,32 +147,32 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for item in temp_records %}
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.date }}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.container_no }}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.cbm }}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.tally }}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.lift_truck }}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.task }}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.account }}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.customer }}</td>
+                    {% for item in preview_data %}
+                    <tr {% if not item.is_valid %}style="background-color: #f8d7da;"{% endif %}>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.date }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.container_no }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.cbm }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.tally }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.lift_truck }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.task }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.account }}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{{ item.record.customer }}</td>
                         <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">
                             <button class="btn-edit" style="background-color: #ffc107; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;"
-                                data-id="{{ item.id }}"
-                                data-date="{{ item.date }}"
-                                data-container="{{ item.container_no }}"
-                                data-cbm="{{ item.cbm }}"
-                                data-tally="{{ item.tally }}"
-                                data-lift="{{ item.lift_truck }}"
-                                data-w1="{{ item.worker_1 }}" data-w2="{{ item.worker_2 }}"
-                                data-w3="{{ item.worker_3 }}" data-w4="{{ item.worker_4 }}"
-                                data-w5="{{ item.worker_5 }}" data-w6="{{ item.worker_6 }}"
-                                data-task="{{ item.task }}"
-                                data-account="{{ item.account }}"
-                                data-customer="{{ item.customer }}"
+                                data-id="{{ item.record.id }}"
+                                data-date="{{ item.record.date }}"
+                                data-container="{{ item.record.container_no }}"
+                                data-cbm="{{ item.record.cbm }}"
+                                data-tally="{{ item.record.tally }}"
+                                data-lift="{{ item.record.lift_truck }}"
+                                data-w1="{{ item.record.worker_1 }}" data-w2="{{ item.record.worker_2 }}"
+                                data-w3="{{ item.record.worker_3 }}" data-w4="{{ item.record.worker_4 }}"
+                                data-w5="{{ item.record.worker_5 }}" data-w6="{{ item.record.worker_6 }}"
+                                data-task="{{ item.record.task }}"
+                                data-account="{{ item.record.account }}"
+                                data-customer="{{ item.record.customer }}"
                                 onclick="openEditTempModal(this)">Sửa</button>
-                            <form action="{{ url_for('delete_temp_data', id=item.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Xóa dòng này?');">
+                            <form action="{{ url_for('delete_temp_data', id=item.record.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Xóa dòng này?');">
                                 <button type="submit" style="background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 5px;">Xóa</button>
                             </form>
                         </td>
@@ -182,14 +206,14 @@
                     {% if records and records.items %}
                         {% for item in records.items %}
                         <tr>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.date }}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.container_no }}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.cbm }}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.tally }}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.lift_truck }}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.task }}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.account }}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.customer }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.work_date }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.ref_no }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.productivity_value }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.tally_id }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.xenang_id }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.task_id }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.account_id }}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{{ item.customer_id }}</td>
                         </tr>
                         {% endfor %}
                     {% else %}
@@ -227,12 +251,15 @@
 
     <hr style="border-top: 1px solid #eee; margin: 20px 0;">
 
-    <form method="POST" action="{{ url_for('import_data') }}" enctype="multipart/form-data">
+    <form id="uploadForm" method="POST" action="{{ url_for('import_data') }}" enctype="multipart/form-data">
         <div class="form-group">
             <label for="file" style="font-weight: bold;">Bước 2: Upload file dữ liệu</label>
             <input type="file" name="file" id="file" accept=".xlsx, .xls" required style="width: 100%; margin-top: 10px;">
         </div>
         <button type="submit" class="btn-upload" style="width: 100%; margin-top: 10px;">Upload & Import</button>
+        <div id="progressContainer" class="progress-container">
+            <div id="progressBar" class="progress-bar">0%</div>
+        </div>
     </form>
   </div>
 </div>
@@ -326,5 +353,67 @@
         
         modal.style.display = "block";
     }
+
+    // --- Xử lý Upload với Progress Bar ---
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        e.preventDefault(); // Ngăn form submit mặc định để dùng AJAX
+        
+        var form = this;
+        var formData = new FormData(form);
+        var xhr = new XMLHttpRequest();
+        
+        var progressBar = document.getElementById('progressBar');
+        var progressContainer = document.getElementById('progressContainer');
+        var btnUpload = form.querySelector('.btn-upload');
+
+        // Hiển thị thanh progress và khóa nút upload
+        progressContainer.style.display = 'block';
+        btnUpload.disabled = true;
+        btnUpload.innerText = 'Đang tải lên...';
+        progressBar.style.width = '0%';
+        progressBar.innerText = '0%';
+        progressBar.style.backgroundColor = '#28a745';
+
+        // Lắng nghe sự kiện tiến trình upload
+        xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+                var percentComplete = (e.loaded / e.total) * 100;
+                progressBar.style.width = percentComplete + '%';
+                progressBar.innerText = Math.round(percentComplete) + '%';
+                
+                // Khi upload xong (100%), chuyển sang trạng thái xử lý server
+                if (percentComplete >= 100) {
+                    btnUpload.innerText = 'Đang xử lý dữ liệu...';
+                    progressBar.innerText = 'Đang xử lý...';
+                    progressBar.style.backgroundColor = '#17a2b8'; // Đổi màu xanh dương
+                }
+            }
+        };
+
+        // Khi server trả về kết quả (hoàn tất)
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                // Server trả về trang HTML mới (đã render xong), thay thế trang hiện tại
+                document.open();
+                document.write(xhr.responseText);
+                document.close();
+            } else {
+                alert('Có lỗi xảy ra: ' + xhr.statusText);
+                btnUpload.disabled = false;
+                btnUpload.innerText = 'Upload & Import';
+                progressContainer.style.display = 'none';
+            }
+        };
+
+        xhr.onerror = function() {
+            alert('Lỗi kết nối mạng!');
+            btnUpload.disabled = false;
+            btnUpload.innerText = 'Upload & Import';
+            progressContainer.style.display = 'none';
+        };
+
+        xhr.open('POST', form.action, true);
+        xhr.send(formData);
+    });
 </script>
 {% endblock %}

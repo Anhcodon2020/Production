@@ -11,6 +11,7 @@ from sqlalchemy import or_
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from openpyxl.worksheet.datavalidation import DataValidation
 
 # 1. Tải biến môi trường từ file .env
 load_dotenv()
@@ -658,6 +659,11 @@ def import_data():
             try:
                 # Đọc file Excel bằng pandas
                 df = pd.read_excel(file)
+                
+                # Xử lý cột Date: chuyển đổi chuỗi sang datetime (hỗ trợ DD/MM/YYYY)
+                if 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+
                 # Xử lý NaN thành None để tránh lỗi DB (chuyển sang object để giữ None)
                 df = df.astype(object).where(pd.notnull(df), None)
                 
@@ -697,24 +703,78 @@ def import_data():
             flash('Vui lòng chỉ tải lên file Excel (.xlsx, .xls)', 'danger')
             
     # Lấy dữ liệu tạm (nếu có)
-    temp_records = LaborProductivityTemp.query.all()
+    temp_records = LaborProductivityTemp.query.order_by(LaborProductivityTemp.id).all()
+    preview_data = []
+    has_errors = False
+
+    if temp_records:
+        # Tạo một map để kiểm tra hiệu quả: { 'customer_name_lower': {'account_name_lower', ...} }
+        customer_accounts_map = {}
+        all_accounts = CustomerAccount.query.join(Customer).with_entities(Customer.customer_name, CustomerAccount.account_name).all()
+        for cust_name, acc_name in all_accounts:
+            cust_key = cust_name.strip().lower()
+            if cust_key not in customer_accounts_map:
+                customer_accounts_map[cust_key] = set()
+            if acc_name:
+                customer_accounts_map[cust_key].add(acc_name.strip().lower())
+
+        for t in temp_records:
+            is_row_valid = True
+            cust_name = t.customer.strip().lower() if t.customer else ''
+            acc_name = t.account.strip().lower() if t.account else ''
+
+            # Kiểm tra xem khách hàng có tồn tại và account có thuộc khách hàng đó không
+            if not cust_name or not acc_name or cust_name not in customer_accounts_map or acc_name not in customer_accounts_map.get(cust_name, set()):
+                is_row_valid = False
+                has_errors = True
+            
+            preview_data.append({'record': t, 'is_valid': is_row_valid})
     
     # Lấy dữ liệu chính thức để hiển thị (phân trang)
     page = request.args.get('page', 1, type=int)
     records = LaborProductivity.query.order_by(LaborProductivity.id.desc()).paginate(page=page, per_page=20, error_out=False)
     
-    return render_template('importdata.html', records=records, temp_records=temp_records)
+    return render_template('importdata.html', records=records, preview_data=preview_data, has_errors=has_errors)
 
 @app.route('/import-data/confirm', methods=['POST'])
 @login_required
 @update_required
 def confirm_import():
     try:
-        temps = LaborProductivityTemp.query.all()
+        temps = LaborProductivityTemp.query.order_by(LaborProductivityTemp.id).all()
         if not temps:
             flash('Không có dữ liệu tạm để lưu.', 'warning')
             return redirect(url_for('import_data'))
             
+        # --- BƯỚC 1: VALIDATE DỮ LIỆU TRƯỚC KHI LƯU ---
+        errors = []
+        for i, t in enumerate(temps):
+            if not t.customer or not t.account:
+                errors.append(f"Dòng {i + 1}: Thiếu thông tin Khách hàng hoặc Account.")
+                continue
+
+            cust_name = t.customer.strip()
+            acc_name = t.account.strip()
+            
+            customer = Customer.query.filter(Customer.customer_name.ilike(cust_name)).first()
+            if not customer:
+                errors.append(f"Dòng {i + 1}: Khách hàng '{cust_name}' không tồn tại trong hệ thống.")
+                continue
+
+            acc = CustomerAccount.query.filter(
+                CustomerAccount.customer_id == customer.id,
+                CustomerAccount.account_name.ilike(acc_name)
+            ).first()
+            if not acc:
+                errors.append(f"Dòng {i + 1}: Account '{acc_name}' không thuộc khách hàng '{cust_name}'.")
+
+        if errors:
+            flash('Không thể lưu do có lỗi dữ liệu. Vui lòng kiểm tra lại:', 'danger')
+            for error in errors:
+                flash(error, 'danger')
+            return redirect(url_for('import_data'))
+
+        # --- BƯỚC 2: LƯU DỮ LIỆU NẾU KHÔNG CÓ LỖI ---
         count = 0
         for t in temps:
             # Mặc định ban đầu
@@ -722,33 +782,51 @@ def confirm_import():
             unit = 'CBM'
             quantity = t.cbm if t.cbm is not None else 0.0
             
+            # Khởi tạo các biến object để tránh lỗi UnboundLocalError
+            customer, acc, task_obj = None, None, None
+
             # Tìm định mức chuyển đổi dựa trên Account Code và Task Code
-            if t.account and t.task:
-                # 1. Tìm Account ID từ mã hoặc tên (t.account)
-                acc = CustomerAccount.query.filter(or_(
-                    CustomerAccount.account_code == t.account,
-                    CustomerAccount.account_name == t.account
-                )).first()
-                if acc:
-                    # 2. Tìm Task ID từ mã hoặc tên (t.task) thuộc Account đó
-                    task_obj = AccountTask.query.filter(
-                        AccountTask.account_id == acc.id,
-                        or_(AccountTask.task_code == t.task, AccountTask.task_name == t.task)
+            if t.customer and t.account and t.task and t.date:
+                # Chuẩn hóa dữ liệu (xóa khoảng trắng, không phân biệt hoa thường)
+                cust_name = t.customer.strip()
+                acc_name = t.account.strip()
+                task_val = t.task.strip()
+
+                # 1. Tìm Customer ID từ tên khách hàng
+                customer = Customer.query.filter(Customer.customer_name.ilike(cust_name)).first()
+                if customer:
+                    # 2. Tìm Account ID từ tên account và customer_id
+                    acc = CustomerAccount.query.filter(
+                        CustomerAccount.customer_id == customer.id,
+                        CustomerAccount.account_name.ilike(acc_name)
                     ).first()
-                    if task_obj:
-                        # 3. Tìm Index có hiệu lực (effective_from <= date <= effective_to)
-                        idx = AccountConversionIndex.query.filter(
-                            AccountConversionIndex.account_id == acc.id,
-                            AccountConversionIndex.task_id == task_obj.id,
-                            AccountConversionIndex.effective_from <= t.date,
-                            or_(AccountConversionIndex.effective_to == None, AccountConversionIndex.effective_to >= t.date)
-                        ).order_by(AccountConversionIndex.effective_from.desc()).first()
-                        
-                        if idx:
-                            conv_index = float(idx.conversion_index)
-                            unit = idx.unit
-                            if t.cbm is not None:
-                                quantity = float(t.cbm) * conv_index
+
+                    if acc:
+                        # 3. Tìm Task ID từ mã hoặc tên (t.task) thuộc Account đó
+                        task_obj = AccountTask.query.filter(
+                            AccountTask.account_id == acc.id,
+                            or_(AccountTask.task_code.ilike(task_val), AccountTask.task_name.ilike(task_val))
+                        ).first()
+
+                        if task_obj:
+                            # 4. Tìm Index có hiệu lực (effective_from <= date <= effective_to)
+                            # Bỏ filter theo ngày hiệu lực theo yêu cầu
+                            idx_index = AccountConversionIndex.query.filter(
+                                AccountConversionIndex.account_id == acc.id,
+                                AccountConversionIndex.task_id == task_obj.id
+                            ).order_by(AccountConversionIndex.effective_from.desc()).first()
+
+                            if idx_index:
+                                conv_index = float(idx_index.conversion_index)
+                                unit = idx_index.unit
+                                if t.cbm is not None:
+                                    quantity = float(t.cbm) * conv_index
+            
+            # Sử dụng tên từ các object đã tìm thấy để lưu, nếu không tìm thấy thì dùng tên gốc từ Excel.
+            # Điều này đảm bảo dữ liệu nhất quán và báo cáo hiển thị đúng tên.
+            task_name_to_save = task_obj.task_name if task_obj else t.task
+            account_name_to_save = acc.account_name if acc else t.account
+            customer_name_to_save = customer.customer_name if customer else t.customer
 
             lp = LaborProductivity(
                 work_date=t.date,
@@ -762,9 +840,9 @@ def confirm_import():
                 congnhan4_id=t.worker_4,
                 congnhan5_id=t.worker_5,
                 congnhan6_id=t.worker_6,
-                task_id=t.task,
-                account_id=t.account,
-                customer_id=t.customer,
+                task_id=task_name_to_save,
+                account_id=account_name_to_save,
+                customer_id=customer_name_to_save,
                 unit=unit,
                 conversion_index=conv_index,
                 quantity=quantity
@@ -1103,6 +1181,14 @@ def download_template():
         'task', 'account', 'khách hàng'
     ]
     
+    # Lấy dữ liệu cho Combobox (Dropdown)
+    # Lấy danh sách khách hàng
+    customers = [c.customer_name for c in Customer.query.with_entities(Customer.customer_name).distinct().all() if c.customer_name]
+    # Lấy danh sách account (tên)
+    accounts = [a.account_name for a in CustomerAccount.query.with_entities(CustomerAccount.account_name).distinct().all() if a.account_name]
+    # Lấy danh sách task (tên)
+    tasks = [t.task_name for t in AccountTask.query.with_entities(AccountTask.task_name).distinct().all() if t.task_name]
+
     # Tạo DataFrame rỗng với các cột này
     df = pd.DataFrame(columns=columns)
     
@@ -1111,6 +1197,35 @@ def download_template():
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Template')
         
+        # Thêm Data Validation (Combobox)
+        workbook = writer.book
+        ws = writer.sheets['Template']
+        
+        # Tạo sheet ẩn chứa dữ liệu danh sách
+        ws_data = workbook.create_sheet('DataList')
+        ws_data.sheet_state = 'hidden'
+        
+        # Ghi dữ liệu vào sheet ẩn (Cột A: Khách hàng, B: Account, C: Task)
+        for i, val in enumerate(customers, 1): ws_data.cell(row=i, column=1, value=val)
+        for i, val in enumerate(accounts, 1): ws_data.cell(row=i, column=2, value=val)
+        for i, val in enumerate(tasks, 1): ws_data.cell(row=i, column=3, value=val)
+
+        # Hàm helper để thêm validation
+        def add_validation(col_letter, data_len, col_idx_in_data):
+            if data_len > 0:
+                # Tạo tham chiếu đến sheet DataList (VD: 'DataList'!$A$1:$A$10)
+                col_char = chr(64 + col_idx_in_data) # 1->A, 2->B, 3->C
+                formula = f"'DataList'!${col_char}$1:${col_char}${data_len}"
+                dv = DataValidation(type="list", formula1=formula, allow_blank=True)
+                ws.add_data_validation(dv)
+                dv.add(f"{col_letter}2:{col_letter}1000") # Áp dụng cho 1000 dòng
+
+        # Áp dụng validation cho các cột tương ứng
+        # Task (L), Account (M), Khách hàng (N)
+        add_validation('L', len(tasks), 3)      # Task lấy từ cột C (3) của DataList
+        add_validation('M', len(accounts), 2)   # Account lấy từ cột B (2) của DataList
+        add_validation('N', len(customers), 1)  # Khách hàng lấy từ cột A (1) của DataList
+
     output.seek(0)
     
     return send_file(
