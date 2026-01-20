@@ -982,16 +982,25 @@ def manage_users():
 @admin_required
 def edit_user(id):
     user = User.query.get_or_404(id)
+
+    # Cập nhật các trường chung
     user.full_name = request.form['full_name']
-    user.role = request.form['role']
-    user.is_active = True if request.form.get('is_active') else False
     user.can_export = True if request.form.get('can_export') else False
-    
+
+    # Nếu là user 'admin', không cho phép thay đổi quyền và trạng thái
+    if user.username == 'admin':
+        user.role = 'ADMIN'
+        user.is_active = True
+    else:
+        # Các user khác thì cập nhật bình thường
+        user.role = request.form['role']
+        user.is_active = True if request.form.get('is_active') else False
+
     # Chỉ cập nhật mật khẩu nếu người dùng nhập mới
     new_password = request.form.get('password')
     if new_password:
         user.password_hash = generate_password_hash(new_password)
-        
+
     try:
         db.session.commit()
         flash('Cập nhật user thành công!', 'success')
@@ -1005,6 +1014,10 @@ def edit_user(id):
 @admin_required
 def delete_user(id):
     user = User.query.get_or_404(id)
+    if user.username == 'admin':
+        flash('Không thể xóa tài khoản Admin mặc định.', 'danger')
+        return redirect(url_for('manage_users'))
+
     db.session.delete(user)
     db.session.commit()
     flash('Xóa user thành công!', 'success')

@@ -93,9 +93,11 @@
                                 data-active="{{ 'true' if u.is_active else 'false' }}"
                                 data-export="{{ 'true' if u.can_export else 'false' }}"
                                 onclick="openEditModal(this)">Sửa</button>
+                        {% if u.username != 'admin' %}
                         <form action="{{ url_for('delete_user', id=u.id) }}" method="POST" style="display:inline;" onsubmit="return confirm('Bạn có chắc chắn muốn xóa user này?');">
                             <button type="submit" class="btn-delete">Xóa</button>
                         </form>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -155,24 +157,42 @@
         document.getElementById('username').readOnly = false;
         document.getElementById('password').required = true;
         document.getElementById('pw-hint').innerText = "(*)";
+
+        // Đảm bảo các trường không bị vô hiệu hóa khi thêm mới
+        document.getElementById('role').disabled = false;
+        document.getElementById('is_active').disabled = false;
+
         modal.style.display = "block";
     }
 
     function openEditModal(btn) {
         document.getElementById('modalTitle').innerText = "Sửa Thông Tin User";
         document.getElementById('userForm').action = "/users/edit/" + btn.getAttribute('data-id');
-        
-        document.getElementById('username').value = btn.getAttribute('data-username');
-        document.getElementById('username').readOnly = true; // Không cho sửa username
+
+        var username = btn.getAttribute('data-username');
+        document.getElementById('username').value = username;
+        document.getElementById('username').readOnly = true;
         document.getElementById('full_name').value = btn.getAttribute('data-fullname');
         document.getElementById('role').value = btn.getAttribute('data-role');
         document.getElementById('is_active').checked = (btn.getAttribute('data-active') === 'true');
         document.getElementById('can_export').checked = (btn.getAttribute('data-export') === 'true');
-        
+
         document.getElementById('password').value = "";
         document.getElementById('password').required = false;
         document.getElementById('pw-hint').innerText = "(Để trống nếu không đổi)";
-        
+
+        var roleSelect = document.getElementById('role');
+        var activeCheckbox = document.getElementById('is_active');
+
+        // Nếu là user 'admin', vô hiệu hóa các trường nhạy cảm
+        if (username === 'admin') {
+            roleSelect.disabled = true;
+            activeCheckbox.disabled = true;
+        } else {
+            roleSelect.disabled = false;
+            activeCheckbox.disabled = false;
+        }
+
         modal.style.display = "block";
     }
 </script>
