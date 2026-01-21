@@ -55,6 +55,7 @@
             <a href="{{ url_for('account') }}" class="{{ 'active' if request.endpoint == 'account' else '' }}">Account</a>
             <a href="{{ url_for('account_tasks') }}" class="{{ 'active' if request.endpoint == 'account_tasks' else '' }}">Account Tasks</a>
             <a href="{{ url_for('account_conversion_index') }}" class="{{ 'active' if request.endpoint == 'account_conversion_index' else '' }}">Định mức</a>
+            <a href="{{ url_for('manage_productivity') }}" class="{{ 'active' if request.endpoint == 'manage_productivity' else '' }}">Quản lý Sản Lượng</a>
         {% endif %}
 
         {% if current_user.role in ['ADMIN', 'UPDATE'] %}

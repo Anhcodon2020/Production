@@ -1023,6 +1023,138 @@ def delete_user(id):
     flash('Xóa user thành công!', 'success')
     return redirect(url_for('manage_users'))
 
+@app.route('/api/tasks-by-account-name')
+@login_required
+def get_tasks_by_account_name():
+    account_name = request.args.get('account_name')
+    customer_name = request.args.get('customer_name')
+
+    if not account_name or not customer_name:
+        return jsonify([])
+
+    customer = Customer.query.filter(Customer.customer_name.ilike(customer_name)).first()
+    if not customer:
+        return jsonify([])
+    
+    account = CustomerAccount.query.filter(
+        CustomerAccount.customer_id == customer.id,
+        CustomerAccount.account_name.ilike(account_name)
+    ).first()
+
+    if not account:
+        return jsonify([])
+
+    tasks = AccountTask.query.filter_by(account_id=account.id).order_by(AccountTask.task_name).all()
+    return jsonify([{'name': t.task_name} for t in tasks])
+
+@app.route('/api/get-conversion-info')
+@login_required
+def get_conversion_info():
+    customer_name = request.args.get('customer_name')
+    account_name = request.args.get('account_name')
+    task_name = request.args.get('task_name')
+
+    default_response = jsonify({'conversion_index': 1.0, 'unit': 'CBM'})
+
+    if not all([customer_name, account_name, task_name]):
+        return default_response
+
+    try:
+        customer = Customer.query.filter(Customer.customer_name.ilike(customer_name)).first()
+        if not customer: return default_response
+
+        account = CustomerAccount.query.filter(
+            CustomerAccount.customer_id == customer.id,
+            CustomerAccount.account_name.ilike(account_name)
+        ).first()
+        if not account: return default_response
+
+        task = AccountTask.query.filter(
+            AccountTask.account_id == account.id,
+            or_(AccountTask.task_code.ilike(task_name), AccountTask.task_name.ilike(task_name))
+        ).first()
+        if not task: return default_response
+
+        # Lấy index mới nhất, bỏ qua ngày hiệu lực để nhất quán với logic import
+        index = AccountConversionIndex.query.filter(
+            AccountConversionIndex.account_id == account.id,
+            AccountConversionIndex.task_id == task.id
+        ).order_by(AccountConversionIndex.effective_from.desc()).first()
+
+        if index:
+            return jsonify({'conversion_index': float(index.conversion_index), 'unit': index.unit})
+        else:
+            return default_response
+    except Exception:
+        return default_response
+
+@app.route('/productivity', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_productivity():
+    page = request.args.get('page', 1, type=int)
+    search = request.args.get('search', '')
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    
+    query = LaborProductivity.query
+
+    if from_date:
+        query = query.filter(LaborProductivity.work_date >= from_date)
+    if to_date:
+        query = query.filter(LaborProductivity.work_date <= to_date)
+
+    if search:
+        query = query.filter(
+            LaborProductivity.ref_no.ilike(f'%{search}%') |
+            LaborProductivity.task_id.ilike(f'%{search}%') |
+            LaborProductivity.account_id.ilike(f'%{search}%') |
+            LaborProductivity.customer_id.ilike(f'%{search}%')
+        )
+    
+    # Sắp xếp theo ngày giảm dần, sau đó đến ID giảm dần
+    records = query.order_by(LaborProductivity.work_date.desc(), LaborProductivity.id.desc()).paginate(page=page, per_page=20, error_out=False)
+    
+    return render_template('productivity.html', records=records, search_term=search, from_date=from_date, to_date=to_date)
+
+@app.route('/productivity/edit/<int:id>', methods=['POST'])
+@login_required
+@admin_required
+def edit_productivity(id):
+    record = LaborProductivity.query.get_or_404(id)
+    try:
+        record.work_date = datetime.strptime(request.form['work_date'], '%Y-%m-%d').date()
+        record.ref_no = request.form['ref_no']
+        record.customer_id = request.form['customer_id']
+        record.account_id = request.form['account_id']
+        record.task_id = request.form['task_id']
+        record.quantity = float(request.form['quantity'])
+        record.unit = request.form['unit']
+        # Cập nhật CBM gốc nếu cần (productivity_value)
+        if request.form.get('productivity_value'):
+            record.productivity_value = float(request.form['productivity_value'])
+            
+        db.session.commit()
+        flash('Cập nhật sản lượng thành công!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Lỗi cập nhật: {e}', 'danger')
+    return redirect(url_for('manage_productivity'))
+
+@app.route('/productivity/delete/<int:id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_productivity(id):
+    record = LaborProductivity.query.get_or_404(id)
+    try:
+        db.session.delete(record)
+        db.session.commit()
+        flash('Xóa bản ghi thành công!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Lỗi xóa: {e}', 'danger')
+    return redirect(url_for('manage_productivity'))
+
 @app.route('/report', methods=['GET', 'POST'])
 @login_required
 @view_required
@@ -1030,6 +1162,19 @@ def report():
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
     
+    # Nếu không chọn ngày, mặc định từ 26 tháng trước đến 25 tháng hiện tại
+    if not from_date and not to_date:
+        today = datetime.now()
+        if today.month == 1:
+            prev_month = 12
+            prev_year = today.year - 1
+        else:
+            prev_month = today.month - 1
+            prev_year = today.year
+            
+        from_date = f"{prev_year}-{prev_month:02d}-26"
+        to_date = f"{today.year}-{today.month:02d}-25"
+
     query = LaborProductivity.query
     
     if from_date:
@@ -1322,8 +1467,8 @@ def create_default_admin():
 
 if __name__ == '__main__':
     # Tạo admin mặc định trong context của ứng dụng
-    with app.app_context():
-        create_default_admin()
+    # with app.app_context():
+    #     create_default_admin()
 
     # Chạy ứng dụng
     app.run(host='0.0.0.0', port=5000)
