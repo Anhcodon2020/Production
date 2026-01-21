@@ -139,9 +139,13 @@
     <form id="editForm" method="POST" action="">
       <div class="form-group"><label>Ngày làm việc</label><input type="date" name="work_date" required></div>
       <div class="form-group"><label>Số Cont/Xe</label><input type="text" name="ref_no"></div>
-      <div class="form-group"><label>Khách hàng</label><input type="text" name="customer_id"></div>
-      <div class="form-group"><label>Account</label><input type="text" name="account_id"></div>
-      <div class="form-group"><label>Task</label><input type="text" name="task_id"></div>
+      <div class="form-group"><label>Khách hàng</label><input type="text" name="customer_id" readonly></div>
+      <div class="form-group"><label>Account</label><input type="text" name="account_id" readonly></div>
+      <div class="form-group">
+        <label>Task</label>
+        <select id="taskSelectInModal" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;"></select>
+        <input type="hidden" name="task_id" id="taskNameHidden">
+      </div>
       <div class="form-group"><label>CBM (Giá trị gốc)</label><input type="number" step="0.01" name="productivity_value"></div>
       <div class="form-group"><label>Sản lượng (Sau quy đổi)</label><input type="number" step="0.01" name="quantity" required></div>
       <div class="form-group"><label>Đơn vị tính</label><input type="text" name="unit"></div>
@@ -151,18 +155,95 @@
 </div>
 
 <script>
+    const editModal = document.getElementById('editModal');
+    const cbmInput = editModal.querySelector('[name="productivity_value"]');
+    const taskSelect = editModal.querySelector('#taskSelectInModal');
+    const quantityInput = editModal.querySelector('[name="quantity"]');
+    const unitInput = editModal.querySelector('[name="unit"]');
+    const customerInput = editModal.querySelector('[name="customer_id"]');
+    const accountInput = editModal.querySelector('[name="account_id"]');
+    const taskNameHidden = editModal.querySelector('#taskNameHidden');
+
+    async function recalculateQuantity() {
+        const cbm = parseFloat(cbmInput.value) || 0;
+        const customerName = customerInput.value;
+        const accountName = accountInput.value;
+        const taskName = taskSelect.value;
+
+        if(taskName) {
+            taskNameHidden.value = taskName;
+        }
+
+        try {
+            const url = `/api/get-conversion-info?customer_name=${encodeURIComponent(customerName)}&account_name=${encodeURIComponent(accountName)}&task_name=${encodeURIComponent(taskName)}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            const conversionIndex = data.conversion_index || 1.0;
+            const unit = data.unit || 'CBM';
+
+            const newQuantity = cbm * conversionIndex;
+            quantityInput.value = newQuantity.toFixed(2);
+            unitInput.value = unit;
+
+        } catch (error) {
+            console.error("Error recalculating:", error);
+            quantityInput.value = cbm.toFixed(2);
+            unitInput.value = 'CBM';
+        }
+    }
+
+    async function loadTasksForModal(customerName, accountName, selectedTaskName) {
+        taskSelect.innerHTML = '<option>Đang tải...</option>';
+        try {
+            const url = `/api/tasks-by-account-name?customer_name=${encodeURIComponent(customerName)}&account_name=${encodeURIComponent(accountName)}`;
+            const response = await fetch(url);
+            const tasks = await response.json();
+
+            taskSelect.innerHTML = '';
+            if (tasks.length === 0) {
+                taskSelect.innerHTML = '<option value="">-- Không có task --</option>';
+            }
+
+            tasks.forEach(task => {
+                const option = document.createElement('option');
+                option.value = task.name;
+                option.textContent = task.name;
+                if (task.name === selectedTaskName) {
+                    option.selected = true;
+                }
+                taskSelect.appendChild(option);
+            });
+            
+            await recalculateQuantity();
+
+        } catch (error) {
+            console.error("Error loading tasks:", error);
+            taskSelect.innerHTML = '<option value="">Lỗi tải task</option>';
+        }
+    }
+
+    cbmInput.addEventListener('input', recalculateQuantity);
+    taskSelect.addEventListener('change', recalculateQuantity);
+
     function openEditModal(btn) {
         var modal = document.getElementById('editModal');
         var form = document.getElementById('editForm');
         form.action = "/productivity/edit/" + btn.getAttribute('data-id');
+        
         form.querySelector('[name="work_date"]').value = btn.getAttribute('data-date');
         form.querySelector('[name="ref_no"]').value = btn.getAttribute('data-ref');
-        form.querySelector('[name="customer_id"]').value = btn.getAttribute('data-cust');
-        form.querySelector('[name="account_id"]').value = btn.getAttribute('data-acc');
-        form.querySelector('[name="task_id"]').value = btn.getAttribute('data-task');
         form.querySelector('[name="productivity_value"]').value = btn.getAttribute('data-cbm');
-        form.querySelector('[name="quantity"]').value = btn.getAttribute('data-qty');
-        form.querySelector('[name="unit"]').value = btn.getAttribute('data-unit');
+
+        const customerName = btn.getAttribute('data-cust');
+        const accountName = btn.getAttribute('data-acc');
+        const taskName = btn.getAttribute('data-task');
+
+        form.querySelector('[name="customer_id"]').value = customerName;
+        form.querySelector('[name="account_id"]').value = accountName;
+        
+        loadTasksForModal(customerName, accountName, taskName);
+        
         modal.style.display = "block";
     }
     window.onclick = function(event) { if (event.target == document.getElementById('editModal')) { document.getElementById('editModal').style.display = "none"; } }
