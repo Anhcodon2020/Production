@@ -53,6 +53,7 @@
                 <tr>
                     <th>ID</th>
                     <th>Username</th>
+                    <th>Mật khẩu</th>
                     <th>Họ tên</th>
                     <th>Quyền (Role)</th>
                     <th>Trạng thái</th>
@@ -67,6 +68,13 @@
                 <tr>
                     <td>{{ u.id }}</td>
                     <td><strong>{{ u.username }}</strong></td>
+                    <td>
+                        {% if current_user.username == 'admin' %}
+                            <span title="{{ u.password_hash }}">{{ u.password_hash[:15] }}...</span>
+                        {% else %}
+                            ******
+                        {% endif %}
+                    </td>
                     <td>{{ u.full_name }}</td>
                     <td><span class="role-badge role-{{ u.role }}">{{ u.role }}</span></td>
                     <td>
@@ -102,7 +110,7 @@
                 </tr>
                 {% endfor %}
                 {% else %}
-                <tr><td colspan="7" style="text-align: center; padding: 20px;">Chưa có user nào.</td></tr>
+                <tr><td colspan="9" style="text-align: center; padding: 20px;">Chưa có user nào.</td></tr>
                 {% endif %}
             </tbody>
         </table>
