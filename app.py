@@ -1,9 +1,11 @@
 import os
 import re
 import io
+import unicodedata
 from functools import wraps
 import pandas as pd
 from datetime import datetime
+import warnings
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import text
@@ -12,6 +14,9 @@ from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from openpyxl.worksheet.datavalidation import DataValidation
+
+# Tắt cảnh báo UserWarning của openpyxl (thường gặp khi đọc file có Data Validation)
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 # 1. Tải biến môi trường từ file .env
 load_dotenv()
@@ -559,19 +564,38 @@ def account_conversion_index():
 
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '')
+    sort_by = request.args.get('sort_by', 'id')
+    order = request.args.get('order', 'desc')
     
-    query = AccountConversionIndex.query.join(CustomerAccount).join(AccountTask)
+    query = AccountConversionIndex.query.join(CustomerAccount).join(Customer).join(AccountTask)
+    query = AccountConversionIndex.query.join(CustomerAccount).join(Customer).join(AccountConversionIndex.task)
     if search:
         query = query.filter(
             CustomerAccount.account_code.ilike(f'%{search}%') | 
+            CustomerAccount.account_name.ilike(f'%{search}%') | 
+            Customer.customer_name.ilike(f'%{search}%') | 
             AccountTask.task_name.ilike(f'%{search}%') |
             AccountTask.task_code.ilike(f'%{search}%')
         )
     
-    indices = query.order_by(AccountConversionIndex.id.desc()).paginate(page=page, per_page=20, error_out=False)
+    # Xử lý sắp xếp
+    if sort_by == 'account':
+        if order == 'asc':
+            query = query.order_by(CustomerAccount.account_code.asc())
+        else:
+            query = query.order_by(CustomerAccount.account_code.desc())
+    elif sort_by == 'task':
+        if order == 'asc':
+            query = query.order_by(AccountTask.task_name.asc())
+        else:
+            query = query.order_by(AccountTask.task_name.desc())
+    else:
+        query = query.order_by(AccountConversionIndex.id.desc())
+
+    indices = query.paginate(page=page, per_page=20, error_out=False)
     accounts = CustomerAccount.query.filter_by(is_active=True).order_by(CustomerAccount.account_code).all()
     
-    return render_template('account_conversion_index.html', indices=indices, accounts=accounts, search_term=search)
+    return render_template('account_conversion_index.html', indices=indices, accounts=accounts, search_term=search, sort_by=sort_by, order=order)
 
 @app.route('/account-conversion-index/edit/<int:id>', methods=['POST'])
 @login_required
@@ -658,44 +682,133 @@ def import_data():
         if file and file.filename.endswith(('.xlsx', '.xls')):
             try:
                 # Đọc file Excel bằng pandas
-                df = pd.read_excel(file)
+                # Sử dụng engine openpyxl để đảm bảo đọc tốt file xlsx
+                df = pd.read_excel(file, engine='openpyxl')
+
+                # --- 1. ĐỊNH NGHĨA MAPPING CỘT (Hỗ trợ nhiều cách gọi tên) ---
+                col_map = {
+                    'date': 'date', 'ngày': 'date', 'ngay': 'date', 'work date': 'date', 'ngay lam viec': 'date',
+                    'số cont/xe': 'container_no', 'container': 'container_no', 'cont': 'container_no', 'số xe': 'container_no', 'số cont': 'container_no', 'so cont': 'container_no', 'so xe': 'container_no',
+                    'task': 'task', 'hạng mục': 'task', 'công việc': 'task', 'cong viec': 'task', 'ten hang muc': 'task',
+                    'account': 'account', 'tài khoản': 'account', 'tai khoan': 'account',
+                    'khách hàng': 'customer', 'customer': 'customer', 'khach hang': 'customer', 'ten khach hang': 'customer',
+                    'cbm': 'cbm', 'sản lượng': 'cbm', 'sl': 'cbm', 'khối lượng': 'cbm', 'san luong': 'cbm', 'khoi luong': 'cbm',
+                    'tally': 'tally', 'kiểm đếm': 'tally', 'kiem dem': 'tally',
+                    'xe nang': 'lift_truck', 'xe nâng': 'lift_truck', 'lift truck': 'lift_truck', 'lai xe nang': 'lift_truck',
+                    'cong nhan_1': 'worker_1', 'cong nhan 1': 'worker_1', 'worker 1': 'worker_1', 'công nhân 1': 'worker_1',
+                    'cong nhan_2': 'worker_2', 'cong nhan 2': 'worker_2', 'worker 2': 'worker_2', 'công nhân 2': 'worker_2',
+                    'cong nhan_3': 'worker_3', 'cong nhan 3': 'worker_3', 'worker 3': 'worker_3', 'công nhân 3': 'worker_3',
+                    'cong nhan_4': 'worker_4', 'cong nhan 4': 'worker_4', 'worker 4': 'worker_4', 'công nhân 4': 'worker_4',
+                    'cong nhan_5': 'worker_5', 'cong nhan 5': 'worker_5', 'worker 5': 'worker_5', 'công nhân 5': 'worker_5',
+                    'cong nhan_6': 'worker_6', 'cong nhan 6': 'worker_6', 'worker 6': 'worker_6', 'công nhân 6': 'worker_6',
+                }
+
+                # Hàm chuẩn hóa tên cột (về chữ thường, bỏ dấu, bỏ khoảng trắng thừa)
+                def normalize_str(s):
+                    if pd.isna(s): return ""
+                    return unicodedata.normalize('NFC', str(s)).strip().lower()
+
+                # --- 2. TỰ ĐỘNG TÌM DÒNG TIÊU ĐỀ ---
+                # Nếu dòng đầu tiên không chứa đủ từ khóa quan trọng, quét 20 dòng đầu
+                current_cols = [normalize_str(c) for c in df.columns]
+                # Đếm số lượng cột khớp với mapping
+                match_count = sum(1 for c in current_cols if c in col_map)
+                
+                # Nếu ít hơn 3 cột khớp, coi như chưa tìm thấy header đúng -> Quét lại
+                if match_count < 3:
+                    file.seek(0)
+                    # Đọc header=None để lấy dữ liệu thô
+                    df_raw = pd.read_excel(file, header=None, nrows=20, engine='openpyxl') 
+                    found_header_idx = -1
+                    
+                    for idx, row in df_raw.iterrows():
+                        row_vals = [normalize_str(v) for v in row.astype(str)]
+                        # Kiểm tra dòng này có bao nhiêu từ khóa khớp
+                        matches = sum(1 for v in row_vals if v in col_map)
+                        if matches >= 3: # Ngưỡng chấp nhận: tìm thấy ít nhất 3 cột quen thuộc
+                            found_header_idx = idx
+                            break
+                    
+                    if found_header_idx != -1:
+                        file.seek(0)
+                        df = pd.read_excel(file, header=found_header_idx, engine='openpyxl')
+
+                # --- 3. ĐỔI TÊN CỘT VỀ CHUẨN (Standard Keys) ---
+                new_columns = []
+                for col in df.columns:
+                    norm_col = normalize_str(col)
+                    # Nếu tên cột nằm trong map thì lấy tên chuẩn, không thì giữ nguyên
+                    new_columns.append(col_map.get(norm_col, col))
+                df.columns = new_columns
+
+                # --- 4. KIỂM TRA CỘT BẮT BUỘC (Dùng tên chuẩn) ---
+                required_keys = ['date', 'container_no', 'task', 'account', 'customer']
+                missing = [k for k in required_keys if k not in df.columns]
+
+                if missing:
+                    flash(f'Lỗi file: Không tìm thấy các cột bắt buộc: {", ".join(missing)}.<br>Vui lòng kiểm tra lại tên cột trong file Excel.', 'danger')
+                    return redirect(request.url)
                 
                 # Xử lý cột Date: chuyển đổi chuỗi sang datetime (hỗ trợ DD/MM/YYYY)
-                if 'Date' in df.columns:
-                    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+                if 'date' in df.columns:
+                    df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
 
                 # Xử lý NaN thành None để tránh lỗi DB (chuyển sang object để giữ None)
-                df = df.astype(object).where(pd.notnull(df), None)
+                df = df.where(pd.notnull(df), None)
                 
                 # Xóa dữ liệu tạm cũ trước khi import mới
                 db.session.query(LaborProductivityTemp).delete()
                 
-                for _, row in df.iterrows():
+                # --- TỐI ƯU HÓA: CHUẨN BỊ DỮ LIỆU ĐỂ BULK INSERT ---
+                bulk_data = []
+                for row in df.to_dict('records'):
                     # Xử lý ngày tháng
-                    d = row.get('Date')
-                    if hasattr(d, 'date'):
+                    d = row.get('date')
+                    # Kiểm tra kỹ hơn để tránh lỗi NaT (Not a Time) của pandas
+                    if pd.isnull(d):
+                        d = None
+                    elif hasattr(d, 'date'):
                         d = d.date()
                     
-                    lp = LaborProductivityTemp(
-                        date=d,
-                        container_no=row.get('số cont/xe'),
-                        cbm=row.get('cbm'),
-                        tally=row.get('tally'),
-                        lift_truck=row.get('xe nang'),
-                        worker_1=row.get('cong nhan_1'),
-                        worker_2=row.get('cong nhan_2'),
-                        worker_3=row.get('cong nhan_3'),
-                        worker_4=row.get('cong nhan_4'),
-                        worker_5=row.get('cong nhan_5'),
-                        worker_6=row.get('cong nhan_6'),
-                        task=row.get('task'),
-                        account=row.get('account'),
-                        customer=row.get('khách hàng')
-                    )
-                    db.session.add(lp)
+                    # Xử lý an toàn cho CBM (tránh lỗi nếu file excel có chữ trong cột số)
+                    raw_cbm = row.get('cbm')
+                    safe_cbm = None
+                    if raw_cbm is not None:
+                        try:
+                            safe_cbm = float(raw_cbm)
+                        except (ValueError, TypeError):
+                            safe_cbm = 0.0
+
+                    # Helper để lấy string sạch (cắt khoảng trắng thừa)
+                    def get_str(key):
+                        val = row.get(key)
+                        return str(val).strip() if val is not None else None
+
+                    bulk_data.append({
+                        'date': d,
+                        'container_no': get_str('container_no'),
+                        'cbm': safe_cbm,
+                        'tally': get_str('tally'),
+                        'lift_truck': get_str('lift_truck'),
+                        'worker_1': get_str('worker_1'),
+                        'worker_2': get_str('worker_2'),
+                        'worker_3': get_str('worker_3'),
+                        'worker_4': get_str('worker_4'),
+                        'worker_5': get_str('worker_5'),
+                        'worker_6': get_str('worker_6'),
+                        'task': get_str('task'),
+                        'account': get_str('account'),
+                        'customer': get_str('customer')
+                    })
                 
-                db.session.commit()
-                flash(f'Đã đọc {len(df)} dòng vào bảng tạm. Vui lòng kiểm tra và xác nhận lưu!', 'warning')
+                # Insert hàng loạt (Nhanh hơn gấp nhiều lần so với loop add)
+                if bulk_data:
+                    db.session.bulk_insert_mappings(LaborProductivityTemp, bulk_data)
+                    db.session.commit()
+                    flash(f'Đã đọc {len(df)} dòng vào bảng tạm. Vui lòng kiểm tra và xác nhận lưu!', 'success')
+                else:
+                    flash('File không có dữ liệu.', 'warning')
+
             except Exception as e:
                 db.session.rollback()
                 flash(f'Lỗi khi đọc file: {str(e)}', 'danger')
@@ -746,6 +859,36 @@ def confirm_import():
             flash('Không có dữ liệu tạm để lưu.', 'warning')
             return redirect(url_for('import_data'))
             
+        # --- TỐI ƯU HÓA: TẢI TRƯỚC DỮ LIỆU VÀO RAM (CACHE) ---
+        # Thay vì query trong vòng lặp, ta query 1 lần và lưu vào Dictionary
+        
+        # 1. Cache Customers: { 'ten_kh_lower': id }
+        customers_map = {c.customer_name.strip().lower(): c for c in Customer.query.all()}
+        
+        # 2. Cache Accounts: { (customer_id, 'ten_acc_lower'): account_obj }
+        accounts_map = {}
+        for acc in CustomerAccount.query.all():
+            key = (acc.customer_id, acc.account_name.strip().lower())
+            accounts_map[key] = acc
+
+        # 3. Cache Tasks: { (account_id, 'code_or_name_lower'): task_obj }
+        tasks_map = {}
+        for t in AccountTask.query.all():
+            # Map cả code và name để tìm kiếm linh hoạt
+            tasks_map[(t.account_id, t.task_code.strip().lower())] = t
+            tasks_map[(t.account_id, t.task_name.strip().lower())] = t
+
+        # 4. Cache Conversion Indices: { (account_id, task_id): index_obj }
+        # Lấy tất cả index, sắp xếp theo ngày hiệu lực tăng dần
+        # Khi đưa vào dict, giá trị sau sẽ ghi đè giá trị trước -> Lấy được cái mới nhất
+        indices_map = {}
+        all_indices = AccountConversionIndex.query.order_by(AccountConversionIndex.effective_from).all()
+        for idx in all_indices:
+            indices_map[(idx.account_id, idx.task_id)] = idx
+
+        # Danh sách chứa dữ liệu để insert hàng loạt
+        bulk_insert_list = []
+        
         # --- BƯỚC 1: VALIDATE DỮ LIỆU TRƯỚC KHI LƯU ---
         errors = []
         for i, t in enumerate(temps):
@@ -753,20 +896,17 @@ def confirm_import():
                 errors.append(f"Dòng {i + 1}: Thiếu thông tin Khách hàng hoặc Account.")
                 continue
 
-            cust_name = t.customer.strip()
-            acc_name = t.account.strip()
+            cust_key = t.customer.strip().lower()
+            acc_key = t.account.strip().lower()
             
-            customer = Customer.query.filter(Customer.customer_name.ilike(cust_name)).first()
+            customer = customers_map.get(cust_key)
             if not customer:
-                errors.append(f"Dòng {i + 1}: Khách hàng '{cust_name}' không tồn tại trong hệ thống.")
+                errors.append(f"Dòng {i + 1}: Khách hàng '{t.customer}' không tồn tại trong hệ thống.")
                 continue
 
-            acc = CustomerAccount.query.filter(
-                CustomerAccount.customer_id == customer.id,
-                CustomerAccount.account_name.ilike(acc_name)
-            ).first()
+            acc = accounts_map.get((customer.id, acc_key))
             if not acc:
-                errors.append(f"Dòng {i + 1}: Account '{acc_name}' không thuộc khách hàng '{cust_name}'.")
+                errors.append(f"Dòng {i + 1}: Account '{t.account}' không thuộc khách hàng '{t.customer}'.")
 
         if errors:
             flash('Không thể lưu do có lỗi dữ liệu. Vui lòng kiểm tra lại:', 'danger')
@@ -775,85 +915,70 @@ def confirm_import():
             return redirect(url_for('import_data'))
 
         # --- BƯỚC 2: LƯU DỮ LIỆU NẾU KHÔNG CÓ LỖI ---
-        count = 0
         for t in temps:
             # Mặc định ban đầu
             conv_index = 1.0
             unit = 'CBM'
             quantity = t.cbm if t.cbm is not None else 0.0
             
-            # Khởi tạo các biến object để tránh lỗi UnboundLocalError
-            customer, acc, task_obj = None, None, None
+            # Lấy object từ Cache (đã validate ở trên nên chắc chắn có Customer và Account)
+            cust_key = t.customer.strip().lower()
+            customer = customers_map[cust_key]
+            
+            acc_key = t.account.strip().lower()
+            acc = accounts_map[(customer.id, acc_key)]
+            
+            task_obj = None
 
             # Tìm định mức chuyển đổi dựa trên Account Code và Task Code
-            if t.customer and t.account and t.task and t.date:
-                # Chuẩn hóa dữ liệu (xóa khoảng trắng, không phân biệt hoa thường)
-                cust_name = t.customer.strip()
-                acc_name = t.account.strip()
-                task_val = t.task.strip()
+            if t.task:
+                task_val = t.task.strip().lower()
+                # Tìm Task trong Cache
+                task_obj = tasks_map.get((acc.id, task_val))
 
-                # 1. Tìm Customer ID từ tên khách hàng
-                customer = Customer.query.filter(Customer.customer_name.ilike(cust_name)).first()
-                if customer:
-                    # 2. Tìm Account ID từ tên account và customer_id
-                    acc = CustomerAccount.query.filter(
-                        CustomerAccount.customer_id == customer.id,
-                        CustomerAccount.account_name.ilike(acc_name)
-                    ).first()
-
-                    if acc:
-                        # 3. Tìm Task ID từ mã hoặc tên (t.task) thuộc Account đó
-                        task_obj = AccountTask.query.filter(
-                            AccountTask.account_id == acc.id,
-                            or_(AccountTask.task_code.ilike(task_val), AccountTask.task_name.ilike(task_val))
-                        ).first()
-
-                        if task_obj:
-                            # 4. Tìm Index có hiệu lực (effective_from <= date <= effective_to)
-                            # Bỏ filter theo ngày hiệu lực theo yêu cầu
-                            idx_index = AccountConversionIndex.query.filter(
-                                AccountConversionIndex.account_id == acc.id,
-                                AccountConversionIndex.task_id == task_obj.id
-                            ).order_by(AccountConversionIndex.effective_from.desc()).first()
-
-                            if idx_index:
-                                conv_index = float(idx_index.conversion_index)
-                                unit = idx_index.unit
-                                if t.cbm is not None:
-                                    quantity = float(t.cbm) * conv_index
+                if task_obj:
+                    # Tìm Index trong Cache
+                    idx_index = indices_map.get((acc.id, task_obj.id))
+                    
+                    if idx_index:
+                        conv_index = float(idx_index.conversion_index)
+                        unit = idx_index.unit
+                        if t.cbm is not None:
+                            quantity = float(t.cbm) * conv_index
             
             # Sử dụng tên từ các object đã tìm thấy để lưu, nếu không tìm thấy thì dùng tên gốc từ Excel.
-            # Điều này đảm bảo dữ liệu nhất quán và báo cáo hiển thị đúng tên.
             task_name_to_save = task_obj.task_name if task_obj else t.task
             account_name_to_save = acc.account_name if acc else t.account
             customer_name_to_save = customer.customer_name if customer else t.customer
 
-            lp = LaborProductivity(
-                work_date=t.date,
-                ref_no=t.container_no,
-                productivity_value=t.cbm,
-                tally_id=t.tally,
-                xenang_id=t.lift_truck,
-                congnhan1_id=t.worker_1,
-                congnhan2_id=t.worker_2,
-                congnhan3_id=t.worker_3,
-                congnhan4_id=t.worker_4,
-                congnhan5_id=t.worker_5,
-                congnhan6_id=t.worker_6,
-                task_id=task_name_to_save,
-                account_id=account_name_to_save,
-                customer_id=customer_name_to_save,
-                unit=unit,
-                conversion_index=conv_index,
-                quantity=quantity
-            )
-            db.session.add(lp)
-            count += 1
+            bulk_insert_list.append({
+                'work_date': t.date,
+                'ref_no': t.container_no,
+                'productivity_value': t.cbm,
+                'tally_id': t.tally,
+                'xenang_id': t.lift_truck,
+                'congnhan1_id': t.worker_1,
+                'congnhan2_id': t.worker_2,
+                'congnhan3_id': t.worker_3,
+                'congnhan4_id': t.worker_4,
+                'congnhan5_id': t.worker_5,
+                'congnhan6_id': t.worker_6,
+                'task_id': task_name_to_save,
+                'account_id': account_name_to_save,
+                'customer_id': customer_name_to_save,
+                'unit': unit,
+                'conversion_index': conv_index,
+                'quantity': quantity
+            })
         
+        # Insert hàng loạt vào bảng chính
+        if bulk_insert_list:
+            db.session.bulk_insert_mappings(LaborProductivity, bulk_insert_list)
+            
         # Xóa dữ liệu tạm sau khi lưu thành công
         db.session.query(LaborProductivityTemp).delete()
         db.session.commit()
-        flash(f'Đã lưu chính thức {count} dòng dữ liệu!', 'success')
+        flash(f'Đã lưu chính thức {len(bulk_insert_list)} dòng dữ liệu!', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Lỗi khi lưu dữ liệu: {str(e)}', 'danger')
@@ -1311,13 +1436,32 @@ def export_report():
     df_summary = pd.DataFrame(summary_data)
 
     # --- 2. TẠO SHEET CHI TIẾT ---
-    detail_data = [{
-        'Date': r.work_date, 'Container': r.ref_no, 'Task': r.task_id, 'Account': r.account_id,
-        'Quantity': r.quantity, 'Unit': r.unit,
-        'Tally': r.tally_id, 'Xe nâng': r.xenang_id, 
-        'CN1': r.congnhan1_id, 'CN2': r.congnhan2_id, 'CN3': r.congnhan3_id,
-        'CN4': r.congnhan4_id, 'CN5': r.congnhan5_id, 'CN6': r.congnhan6_id
-    } for r in records]
+    detail_data = []
+    for idx, r in enumerate(records, 1):
+        # Kiểm tra xem có công nhân nào không (nếu tất cả đều None/Rỗng thì coi như NaN)
+        workers = [r.congnhan1_id, r.congnhan2_id, r.congnhan3_id, r.congnhan4_id, r.congnhan5_id, r.congnhan6_id]
+        has_worker = any(w for w in workers if w)
+        
+        # CBM = productivity_value. Nếu không có công nhân -> Rỗng
+        cbm_val = r.productivity_value if has_worker else ""
+
+        detail_data.append({
+            'STT': idx,
+            'Ngày nhập hàng': r.work_date,
+            'Số xe/cont': r.ref_no,
+            'CBM': cbm_val,
+            'Tally': r.tally_id,
+            'Xe Nâng': r.xenang_id,
+            'Công nhân 1': r.congnhan1_id,
+            'Công nhân 2': r.congnhan2_id,
+            'Công nhân 3': r.congnhan3_id,
+            'Công nhân 4': r.congnhan4_id,
+            'Công nhân 5': r.congnhan5_id,
+            'Công nhân 6': r.congnhan6_id,
+            'Task': r.task_id,
+            'Account': r.account_id,
+            'Khách hàng': r.customer_id
+        })
     df_detail = pd.DataFrame(detail_data)
 
     output = io.BytesIO()

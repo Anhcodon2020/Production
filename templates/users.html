@@ -33,14 +33,6 @@
     .role-VIEW { background-color: #17a2b8; }
 </style>
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        {% for category, message in messages %}
-            <div class="alert alert-{{ category }}" style="width: 90%; max-width: 1200px; margin: 0 auto 20px auto;">{{ message }}</div>
-        {% endfor %}
-    {% endif %}
-{% endwith %}
-
 <div class="box" style="width: 90%; max-width: 1200px;">
     <div style="overflow: hidden; margin-bottom: 20px;">
         <h1 style="float: left; margin: 0;">Quản lý User & Phân quyền</h1>
@@ -102,9 +94,8 @@
                                 data-export="{{ 'true' if u.can_export else 'false' }}"
                                 onclick="openEditModal(this)">Sửa</button>
                         {% if u.username != 'admin' %}
-                        <form action="{{ url_for('delete_user', id=u.id) }}" method="POST" style="display:inline;" onsubmit="return confirm('Bạn có chắc chắn muốn xóa user này?');">
-                            <button type="submit" class="btn-delete">Xóa</button>
-                        </form>
+                        <button type="button" class="btn-delete" onclick="confirmDeleteUser('{{ u.id }}')">Xóa</button>
+                        <form id="delete-form-{{ u.id }}" action="{{ url_for('delete_user', id=u.id) }}" method="POST" style="display:none;"></form>
                         {% endif %}
                     </td>
                 </tr>
@@ -154,7 +145,29 @@
   </div>
 </div>
 
+<!-- Thêm thư viện SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
+    // Hiển thị thông báo Flash bằng SweetAlert2 Toast
+    document.addEventListener('DOMContentLoaded', function() {
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: '{{ "error" if category == "danger" else category }}',
+                    title: '{{ message }}',
+                    showConfirmButton: false,
+                    timer: 3000,
+                    timerProgressBar: true
+                });
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+    });
+
     var modal = document.getElementById('userModal');
     window.onclick = function(event) { if (event.target == modal) modal.style.display = "none"; }
 
@@ -202,6 +215,23 @@
         }
 
         modal.style.display = "block";
+    }
+
+    function confirmDeleteUser(id) {
+        Swal.fire({
+            title: 'Bạn có chắc chắn?',
+            text: "Bạn muốn xóa user này? Hành động này không thể hoàn tác!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Xóa User',
+            cancelButtonText: 'Hủy'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                document.getElementById('delete-form-' + id).submit();
+            }
+        });
     }
 </script>
 {% endblock %}

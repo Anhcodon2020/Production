@@ -35,6 +35,76 @@
     .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; width: 90%; max-width: 1200px; margin: 0 auto; }
     .alert-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
     .alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+
+    /* Search Bar Styles - Thiết kế mới */
+    .search-wrapper form {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .search-input-group {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: 100%;
+        max-width: 450px;
+    }
+    .search-icon {
+        position: absolute;
+        left: 15px;
+        color: #888;
+        font-size: 16px;
+        pointer-events: none;
+    }
+    .styled-search {
+        width: 100%;
+        padding: 12px 40px 12px 40px; /* Padding trái cho icon, phải cho nút xóa */
+        border: 1px solid #e0e0e0;
+        border-radius: 30px; /* Bo tròn */
+        font-size: 15px;
+        transition: all 0.3s ease;
+        background-color: #fff;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    }
+    .styled-search:focus {
+        border-color: #007bff;
+        box-shadow: 0 4px 12px rgba(0,123,255,0.15);
+        outline: none;
+    }
+    .clear-btn {
+        position: absolute;
+        right: 15px;
+        color: #999;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+    }
+    .clear-btn:hover { 
+        background-color: #f0f0f0;
+        color: #dc3545; 
+    }
+    .btn-search-submit {
+        padding: 12px 25px;
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        color: white;
+        border: none;
+        border-radius: 30px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow: 0 4px 6px rgba(0,123,255,0.2);
+    }
+    .btn-search-submit:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 12px rgba(0,123,255,0.3);
+    }
 </style>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -52,11 +122,18 @@
     </div>
 
     <div class="search-container" style="margin-top: 20px; text-align: left;">
-        <form method="GET" action="{{ url_for('account_conversion_index') }}">
-            <input type="text" name="search" placeholder="Tìm theo Account hoặc Task..." value="{{ search_term or '' }}" style="width: 300px; padding: 10px; border-radius: 4px; border: 1px solid #ddd; display: inline-block;">
-            <button type="submit" style="padding: 10px 15px; border-radius: 4px; border: none; background-color: #007bff; color: white; cursor: pointer;">Tìm kiếm</button>
-            <a href="{{ url_for('account_conversion_index') }}" style="padding: 10px 15px; text-decoration: none;">Xóa tìm</a>
-        </form>
+        <div class="search-wrapper">
+            <form method="GET" action="{{ url_for('account_conversion_index') }}">
+                <div class="search-input-group">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" name="search" class="styled-search" placeholder="Tìm kiếm Account, Khách hàng, Task..." value="{{ search_term or '' }}">
+                    {% if search_term %}
+                        <a href="{{ url_for('account_conversion_index') }}" class="clear-btn" title="Xóa tìm kiếm">✕</a>
+                    {% endif %}
+                </div>
+                <button type="submit" class="btn-search-submit">Tìm kiếm</button>
+            </form>
+        </div>
     </div>
     
     <div class="table-container">
@@ -78,7 +155,11 @@
                 {% for idx in indices.items %}
                 <tr>
                     <td>{{ idx.id }}</td>
-                    <td>{{ idx.account.account_code }}</td>
+                    <td>
+                        <strong>{{ idx.account.account_code }}</strong>
+                        <br>
+                        <small style="color: #666;">{{ idx.account.customer.customer_name }}</small>
+                    </td>
                     <td>{{ idx.task.task_name }} <br><small>({{ idx.task.task_code }})</small></td>
                     <td>{{ idx.conversion_index }}</td>
                     <td>{{ idx.unit or '' }}</td>

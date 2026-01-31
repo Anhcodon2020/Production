@@ -85,14 +85,6 @@
     }
 </style>
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">{{ message }}</div>
-        {% endfor %}
-    {% endif %}
-{% endwith %}
-
 <div class="box" style="width: 90%; max-width: 1200px;">    <div class="clearfix">
         <h1 style="float: left; margin: 0;">Danh sách Nhân viên</h1>
         <button class="btn-add" onclick="openAddModal()">+ Thêm nhân viên</button>
@@ -255,6 +247,9 @@
   </div>
 </div>
 
+<!-- Thêm thư viện SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
 window.onclick = function(event) {
   if (event.target == document.getElementById('addModal')) {
@@ -262,18 +257,23 @@ window.onclick = function(event) {
   }
 }
 
-// Tự động ẩn thông báo sau 3 giây
+// Hiển thị thông báo Flash bằng SweetAlert2 Toast
 window.addEventListener('DOMContentLoaded', (event) => {
-    const alerts = document.querySelectorAll('.alert');
-    if (alerts.length > 0) {
-        setTimeout(() => {
-            alerts.forEach(alert => {
-                alert.style.transition = "opacity 0.5s ease";
-                alert.style.opacity = "0";
-                setTimeout(() => alert.remove(), 500);
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: '{{ "error" if category == "danger" else category }}',
+                title: '{{ message }}',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true
             });
-        }, 3000); // 3000ms = 3 giây
-    }
+        {% endfor %}
+    {% endif %}
+    {% endwith %}
 });
 
 function openAddModal() {
@@ -309,14 +309,24 @@ function openEditModal(btn) {
 }
 
 function confirmDelete(id) {
-    if (confirm("Bạn có chắc chắn muốn xóa nhân viên này không? Hành động này không thể hoàn tác.")) {
-        // Tạo một form ẩn để gửi yêu cầu POST
-        var form = document.createElement("form");
-        form.method = "POST";
-        form.action = "/nhan-vien/delete/" + id;
-        document.body.appendChild(form);
-        form.submit();
-    }
+    Swal.fire({
+        title: 'Bạn có chắc chắn?',
+        text: "Bạn muốn xóa nhân viên này? Hành động này không thể hoàn tác.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Xóa ngay',
+        cancelButtonText: 'Hủy'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            var form = document.createElement("form");
+            form.method = "POST";
+            form.action = "/nhan-vien/delete/" + id;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
 }
 </script>
 {% endblock %}
