@@ -1632,6 +1632,7 @@ def export_anchung():
 
     ac_map = {}
     summary_map = {} # Map tổng hợp cho Excel
+    stt_counter = 1 # Biến đếm STT
 
     for emp in an_chung_emps:
         if emp.masl: ac_map[normalize_key(emp.masl)] = emp
@@ -1665,15 +1666,15 @@ def export_anchung():
                 seen_in_row.add(emp.id)
                 
                 an_chung_data.append({
-                    'Ngày': r.work_date,
-                    'Mã NV': emp.employee_code,
-                    'Mã SL': emp.masl,
+                    'STT': stt_counter,
+                    'VTCV': emp.position,
+                    'MSNV': emp.employee_code,
                     'Họ và tên': emp.full_name,
-                    'Vị trí': emp.position,
-                    'Task': r.task_id,
-                    'Số CBM chưa quy đổi': r.productivity_value,
-                    'Chỉ số quy đổi': r.conversion_index,
-                    'Số cbm đã quy đổi': r.quantity
+                    'Tổng cbm có hệ số': r.quantity,
+                    'cbm chưa hệ số': r.productivity_value,
+                    'thêm': r.task_id,
+                    'Account ID': r.account_id,
+                    'Hệ số': r.conversion_index
                 })
                 
                 # Cộng dồn vào summary_map
@@ -1682,6 +1683,7 @@ def export_anchung():
                     summary_map[code]['Số lượt tham gia'] += 1
                     summary_map[code]['Số CBM chưa quy đổi'] += (r.productivity_value or 0.0)
                     summary_map[code]['Số cbm đã quy đổi'] += (r.quantity or 0.0)
+                stt_counter += 1
 
     df_anchung = pd.DataFrame(an_chung_data)
     

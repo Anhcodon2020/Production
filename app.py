@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
 
 # Tắt cảnh báo UserWarning của openpyxl (thường gặp khi đọc file có Data Validation)
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -1457,154 +1459,337 @@ def report():
 @view_required
 def export_report():
     if not current_user.can_export:
-        flash('Bạn không có quyền xuất báo cáo.', 'danger')
+        flash('B?n kh?ng c? quy?n xu?t b?o c?o.', 'danger')
         return redirect(url_for('report'))
-        
-    # Logic tương tự như report nhưng xuất ra Excel
+
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
-    
+
     query = LaborProductivity.query
-    if from_date: query = query.filter(LaborProductivity.work_date >= from_date)
-    if to_date: query = query.filter(LaborProductivity.work_date <= to_date)
-    
+    if from_date:
+        query = query.filter(LaborProductivity.work_date >= from_date)
+    if to_date:
+        query = query.filter(LaborProductivity.work_date <= to_date)
+
     records = query.order_by(LaborProductivity.work_date.desc()).all()
-    
-    # --- 1. TẠO SHEET TỔNG HỢP (Theo yêu cầu: STT, MÃ SỐ SẢN LƯỢNG, VTCV, CBM) ---
-    staff_stats = {}
-    setting = SystemSetting.query.filter_by(key_name='exclusion_prefixes').first()
-    prefixes_str = setting.value if setting else "TB,IF,HB"
-    exclusion_prefixes = tuple(p.strip() for p in prefixes_str.split(',') if p.strip())
 
-    def add_stat(name, role, qty, val):
-        if not name: return
-        if str(name).upper().startswith(exclusion_prefixes): return
-        
-        key = (name, role)
-        if key not in staff_stats:
-            staff_stats[key] = {'name': name, 'role': role, 'total_qty': 0.0, 'total_val': 0.0}
-        staff_stats[key]['total_qty'] += (qty or 0.0)
-        staff_stats[key]['total_val'] += (val or 0.0)
+    def normalize_key(s):
+        if not s:
+            return None
+        return unicodedata.normalize('NFC', str(s)).strip().lower()
 
+    palette = [
+        'FF00B050', 'FF00B0F0', 'FF70AD47', 'FF92D050',
+        'FFFFC000', 'FFED7D31', 'FFC00000', 'FF7030A0'
+    ]
+
+    # Lấy index mới nhất theo account_id (ưu tiên effective_from mới nhất, sau đó id mới nhất)
+    latest_index_by_account = {}
+    idx_rows = AccountConversionIndex.query.order_by(
+        AccountConversionIndex.account_id.asc(),
+        AccountConversionIndex.effective_from.desc(),
+        AccountConversionIndex.id.desc(),
+    ).all()
+    for idx in idx_rows:
+        if idx.account_id not in latest_index_by_account:
+            latest_index_by_account[idx.account_id] = float(idx.conversion_index or 1.0)
+
+    account_configs = []
+    seen_account_names = set()
+    if latest_index_by_account:
+        accounts = CustomerAccount.query.filter(
+            CustomerAccount.id.in_(latest_index_by_account.keys())
+        ).order_by(CustomerAccount.account_name.asc()).all()
+
+        for i, acc in enumerate(accounts):
+            account_name = (acc.account_name or '').strip()
+            if not account_name:
+                continue
+            name_key = normalize_key(account_name)
+            if name_key in seen_account_names:
+                continue
+            seen_account_names.add(name_key)
+            account_configs.append({
+                'title': account_name,
+                'coef': latest_index_by_account.get(acc.id, 1.0),
+                'color': palette[i % len(palette)],
+            })
+
+    def is_an_chung(employee_type):
+        t = normalize_key(employee_type) or ''
+        return t in ('an_chung', 'an chung')
+
+    all_emps = Employee.query.all()
+    an_chung_emps = [e for e in all_emps if is_an_chung(e.employee_type)]
+    khoan_emps = [e for e in all_emps if not is_an_chung(e.employee_type)]
+
+    def build_maps(employees):
+        worker_map = {}
+        summary_map = {}
+        for emp in employees:
+            if emp.masl:
+                worker_map[normalize_key(emp.masl)] = emp
+            if emp.employee_code:
+                worker_map[normalize_key(emp.employee_code)] = emp
+            if emp.full_name:
+                worker_map[normalize_key(emp.full_name)] = emp
+
+            row_key = emp.employee_code or f"EMP_{emp.id}"
+            summary_map[row_key] = {
+                'employee_code': emp.employee_code or '',
+                'masl': emp.masl or '',
+                'full_name': emp.full_name or '',
+                'position': emp.position or '',
+                'total_raw': 0.0,
+                'total_converted': 0.0,
+            }
+            for cfg in account_configs:
+                summary_map[row_key][cfg['title']] = 0.0
+        return worker_map, summary_map
+
+    khoan_map, khoan_summary_map = build_maps(khoan_emps)
+    ac_map, an_chung_summary_map = build_maps(an_chung_emps)
+
+    an_chung_detail_data = []
     for r in records:
-        qty = r.quantity if r.quantity is not None else 0.0
-        val = r.productivity_value if r.productivity_value is not None else 0.0
-        add_stat(r.tally_id, 'Tally', qty, val)
-        add_stat(r.xenang_id, 'Xe nâng', qty, val)
-        add_stat(r.congnhan1_id, 'Công nhân', qty, val)
-        add_stat(r.congnhan2_id, 'Công nhân', qty, val)
-        add_stat(r.congnhan3_id, 'Công nhân', qty, val)
-        add_stat(r.congnhan4_id, 'Công nhân', qty, val)
-        add_stat(r.congnhan5_id, 'Công nhân', qty, val)
-        add_stat(r.congnhan6_id, 'Công nhân', qty, val)
+        workers = [
+            r.tally_id,
+            r.xenang_id,
+            r.congnhan1_id,
+            r.congnhan2_id,
+            r.congnhan3_id,
+            r.congnhan4_id,
+            r.congnhan5_id,
+            r.congnhan6_id,
+        ]
 
-    summary_list = list(staff_stats.values())
-    summary_list.sort(key=lambda x: x['name'])
+        raw_cbm = float(r.productivity_value or 0.0)
+        converted_cbm = float(r.quantity or 0.0)
+        matched_account = None
+        record_account_key = normalize_key(r.account_id)
+        if record_account_key:
+            for cfg in account_configs:
+                if normalize_key(cfg['title']) == record_account_key:
+                    matched_account = cfg['title']
+                    break
 
-    summary_data = [{
-        'STT': idx, 
-        'MÃ SỐ SẢN LƯỢNG': item['name'], 
-        'VTCV': item['role'], 
-        'Productivity Value': item['total_val'],
-        'Quantity': item['total_qty']
-    } for idx, item in enumerate(summary_list, 1)]
-    df_summary = pd.DataFrame(summary_data)
+        seen_in_row = set()
+        for worker in workers:
+            worker_key = normalize_key(worker)
+            if not worker_key:
+                continue
 
-    # --- 2. TẠO SHEET CHI TIẾT ---
+            group = None
+            emp = None
+            summary_map = None
+            if worker_key in khoan_map:
+                group = 'khoan'
+                emp = khoan_map[worker_key]
+                summary_map = khoan_summary_map
+            elif worker_key in ac_map:
+                group = 'an_chung'
+                emp = ac_map[worker_key]
+                summary_map = an_chung_summary_map
+            else:
+                continue
+
+            if emp.id in seen_in_row:
+                continue
+            seen_in_row.add(emp.id)
+
+            row_key = emp.employee_code or f"EMP_{emp.id}"
+            if row_key not in summary_map:
+                continue
+
+            summary_map[row_key]['total_raw'] += raw_cbm
+            summary_map[row_key]['total_converted'] += converted_cbm
+            if matched_account:
+                summary_map[row_key][matched_account] += raw_cbm
+
+            if group == 'an_chung':
+                an_chung_detail_data.append({
+                    'Ng?y': r.work_date,
+                    'M? NV': emp.employee_code,
+                    'MS': emp.masl,
+                    'H? v? t?n': emp.full_name,
+                    'V? tr?': emp.position,
+                    'Task': r.task_id,
+                    'Account': r.account_id,
+                    'Kh?ch h?ng': r.customer_id,
+                    'CBM ch?a h? s?': raw_cbm,
+                    'CBM c? h? s?': converted_cbm,
+                })
+
+    summary_rows_khoan = list(khoan_summary_map.values())
+    summary_rows_khoan.sort(key=lambda x: (x['full_name'] or '').lower())
+    summary_rows_an_chung = list(an_chung_summary_map.values())
+    summary_rows_an_chung.sort(key=lambda x: (x['full_name'] or '').lower())
+
+    def make_summary_df(summary_rows):
+        return pd.DataFrame([
+            {
+                'STT': idx,
+                'VTCV': item['position'],
+                'MSNV': item['employee_code'],
+                'MS': item['masl'],
+                'H? V? T?N': item['full_name'],
+                'T?ng CBM C? H? S?': item['total_converted'],
+                'T?ng CBM CH?A H? S?': item['total_raw'],
+                **{cfg['title']: item[cfg['title']] for cfg in account_configs},
+            }
+            for idx, item in enumerate(summary_rows, 1)
+        ])
+
+    df_summary_template_khoan = make_summary_df(summary_rows_khoan)
+    df_summary_template_an_chung = make_summary_df(summary_rows_an_chung)
+
     detail_data = []
     for idx, r in enumerate(records, 1):
-        # Kiểm tra xem có công nhân nào không (nếu tất cả đều None/Rỗng thì coi như NaN)
         workers = [r.congnhan1_id, r.congnhan2_id, r.congnhan3_id, r.congnhan4_id, r.congnhan5_id, r.congnhan6_id]
         has_worker = any(w for w in workers if w)
-        
-        # CBM = productivity_value. Nếu không có công nhân -> Rỗng
-        cbm_val = r.productivity_value if has_worker else ""
+        cbm_val = r.productivity_value if has_worker else ''
 
         detail_data.append({
             'STT': idx,
-            'Ngày nhập hàng': r.work_date,
-            'Số xe/cont': r.ref_no,
+            'Ng?y nh?p h?ng': r.work_date,
+            'S? xe/cont': r.ref_no,
             'CBM': cbm_val,
             'Quantity': r.quantity,
             'Tally': r.tally_id,
-            'Xe Nâng': r.xenang_id,
-            'Công nhân 1': r.congnhan1_id,
-            'Công nhân 2': r.congnhan2_id,
-            'Công nhân 3': r.congnhan3_id,
-            'Công nhân 4': r.congnhan4_id,
-            'Công nhân 5': r.congnhan5_id,
-            'Công nhân 6': r.congnhan6_id,
+            'Xe N?ng': r.xenang_id,
+            'C?ng nh?n 1': r.congnhan1_id,
+            'C?ng nh?n 2': r.congnhan2_id,
+            'C?ng nh?n 3': r.congnhan3_id,
+            'C?ng nh?n 4': r.congnhan4_id,
+            'C?ng nh?n 5': r.congnhan5_id,
+            'C?ng nh?n 6': r.congnhan6_id,
             'Task': r.task_id,
             'Account': r.account_id,
-            'Khách hàng': r.customer_id
+            'Kh?ch h?ng': r.customer_id,
         })
+
     df_detail = pd.DataFrame(detail_data)
-
-    # --- 3. TẠO SHEET AN_CHUNG ---
-    an_chung_data = []
-    an_chung_emps = Employee.query.filter_by(employee_type='An_chung').all()
-    ac_map = {}
-    for emp in an_chung_emps:
-        if emp.masl: ac_map[emp.masl.strip().lower()] = emp
-        if emp.employee_code: ac_map[emp.employee_code.strip().lower()] = emp
-        if emp.full_name: ac_map[emp.full_name.strip().lower()] = emp
-        
-    for r in records:
-        workers = [
-            r.tally_id, r.xenang_id, 
-            r.congnhan1_id, r.congnhan2_id, r.congnhan3_id, 
-            r.congnhan4_id, r.congnhan5_id, r.congnhan6_id
-        ]
-        seen_in_row = set()
-        for w_str in workers:
-            if not w_str: continue
-            w_key = str(w_str).strip().lower()
-            if w_key in ac_map:
-                emp = ac_map[w_key]
-                if emp.id in seen_in_row: continue
-                seen_in_row.add(emp.id)
-                
-                an_chung_data.append({
-                    'Ngày': r.work_date,
-                    'Mã NV': emp.employee_code,
-                    'Mã SL': emp.masl,
-                    'Họ và tên': emp.full_name,
-                    'Vị trí': emp.position,
-                    'Task': r.task_id,
-                    'Số CBM chưa quy đổi': r.productivity_value,
-                    'Chỉ số quy đổi': r.conversion_index,
-                    'Số cbm đã quy đổi': r.quantity
-                })
-    df_anchung = pd.DataFrame(an_chung_data)
-
-    # --- 4. TẠO SHEET TỔNG HỢP AN CHUNG ---
-    df_anchung_summary = pd.DataFrame()
-    if not df_anchung.empty:
-        # Group by employee info and sum the values
-        summary_ac = df_anchung.groupby(['Mã NV', 'Mã SL', 'Họ và tên', 'Vị trí']).agg(
-            Total_Productivity_Value=('Số CBM chưa quy đổi', 'sum'),
-            Total_Quantity=('Số cbm đã quy đổi', 'sum')
-        ).reset_index()
-        
-        # Rename columns for clarity in Excel
-        summary_ac.rename(columns={
-            'Total_Productivity_Value': 'Tổng CBM chưa quy đổi',
-            'Total_Quantity': 'Tổng CBM đã quy đổi'
-        }, inplace=True)
-        
-        df_anchung_summary = summary_ac.sort_values(by='Họ và tên')
+    df_anchung = pd.DataFrame(an_chung_detail_data)
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        wb = writer.book
+        thin = Side(style='thin', color='000000')
+        thin_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        fill_header_left = PatternFill(fill_type='solid', fgColor='FFDAF2D0')
+        fill_yellow = PatternFill(fill_type='solid', fgColor='FFFFFF00')
+        total_data_cols = 7 + len(account_configs)
+        base_headers = ['STT', 'VTCV', 'MSNV', 'MS (NEU CO)', 'HO VA TEN', 'Tong CBM CO HE SO', 'CBM CHUA HE SO']
+
+        def render_summary_sheet(ws, summary_rows, title_text):
+            last_col_letter = get_column_letter(total_data_cols)
+            ws.merge_cells(f'A1:{last_col_letter}1')
+            ws['A1'] = title_text
+            ws['A1'].font = Font(name='Times New Roman', size=14, bold=True)
+            ws['A1'].alignment = Alignment(horizontal='left', vertical='center')
+
+            for col, header in enumerate(base_headers, start=1):
+                cell = ws.cell(row=3, column=col, value=header)
+                cell.font = Font(name='Times New Roman', size=11, bold=True)
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.fill = fill_header_left
+                cell.border = thin_border
+
+            for idx, cfg in enumerate(account_configs, start=8):
+                cell = ws.cell(row=3, column=idx, value=cfg['title'])
+                cell.font = Font(name='Times New Roman', size=11, bold=True)
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+                cell.fill = PatternFill(fill_type='solid', fgColor=cfg['color'])
+                cell.border = thin_border
+
+            ws.merge_cells('A4:G4')
+            ws['A4'] = 'H? S?'
+            ws['A4'].font = Font(name='Times New Roman', size=11, bold=True)
+            ws['A4'].alignment = Alignment(horizontal='center', vertical='center')
+            ws['A4'].fill = fill_header_left
+
+            for idx, cfg in enumerate(account_configs, start=8):
+                cell = ws.cell(row=4, column=idx, value=cfg['coef'])
+                cell.font = Font(name='Times New Roman', size=11, bold=True)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = thin_border
+                cell.number_format = '0.0'
+
+            row_count = max(15, len(summary_rows))
+            for i in range(1, row_count + 1):
+                row_no = 4 + i
+                row_data = summary_rows[i - 1] if i - 1 < len(summary_rows) else None
+
+                ws.cell(row=row_no, column=1, value=i)
+                ws.cell(row=row_no, column=2, value=row_data['position'] if row_data else '')
+                ws.cell(row=row_no, column=3, value=row_data['employee_code'] if row_data else '')
+                ws.cell(row=row_no, column=4, value=row_data['masl'] if row_data else '')
+                ws.cell(row=row_no, column=5, value=row_data['full_name'] if row_data else '')
+                ws.cell(row=row_no, column=6, value=row_data['total_converted'] if row_data else 0)
+                ws.cell(row=row_no, column=7, value=row_data['total_raw'] if row_data else 0)
+
+                for j, cfg in enumerate(account_configs, start=8):
+                    ws.cell(row=row_no, column=j, value=(row_data[cfg['title']] if row_data else 0))
+
+                for c in range(1, total_data_cols + 1):
+                    cell = ws.cell(row=row_no, column=c)
+                    cell.font = Font(name='Times New Roman', size=11)
+                    cell.border = thin_border
+                    if c == 5:
+                        cell.alignment = Alignment(horizontal='left', vertical='center')
+                    else:
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                    if c in (6, 7) or c >= 8:
+                        cell.number_format = '#,##0.00'
+
+                if 9 <= row_no <= 15:
+                    for c in (2, 3, 4, 5):
+                        ws.cell(row=row_no, column=c).fill = fill_yellow
+
+            for r in range(3, row_count + 5):
+                for c in range(1, total_data_cols + 1):
+                    ws.cell(row=r, column=c).border = thin_border
+
+            ws.column_dimensions['E'].width = 16.45
+            ws.column_dimensions['F'].width = 23.73
+            ws.column_dimensions['L'].width = 17.36
+            ws.column_dimensions['N'].width = 16.27
+
+            for c in range(1, total_data_cols + 1):
+                col = get_column_letter(c)
+                if ws.column_dimensions[col].width is None:
+                    ws.column_dimensions[col].width = 12.5
+            ws.column_dimensions['A'].width = 6
+            ws.column_dimensions['B'].width = 11
+            ws.column_dimensions['C'].width = 11
+            ws.column_dimensions['D'].width = 13
+
+            for r in range(1, row_count + 5):
+                if r == 1:
+                    ws.row_dimensions[r].height = 15
+                elif r == 2:
+                    ws.row_dimensions[r].height = 15.5
+                elif r in (3, 4):
+                    ws.row_dimensions[r].height = 14.5
+                else:
+                    ws.row_dimensions[r].height = 15.5
+
+            ws.freeze_panes = 'A5'
+
+        ws_khoan = wb.create_sheet('SAN_LUONG_KHOAN', 0)
+        render_summary_sheet(ws_khoan, summary_rows_khoan, 'TONG HOP SAN LUONG THANG - KHOAN')
+
+        ws_an_chung = wb.create_sheet('SAN_LUONG_AN_CHUNG', 1)
+        render_summary_sheet(ws_an_chung, summary_rows_an_chung, 'TONG HOP SAN LUONG THANG - AN CHUNG')
+
+        df_summary_template_khoan.to_excel(writer, index=False, sheet_name='TongHopKhoanRaw')
+        df_summary_template_an_chung.to_excel(writer, index=False, sheet_name='TongHopAnChungRaw')
         df_detail.to_excel(writer, index=False, sheet_name='ChiTiet')
-        df_summary.to_excel(writer, index=False, sheet_name='TongHop')
         if not df_anchung.empty:
-            df_anchung.to_excel(writer, index=False, sheet_name='An_Chung')
-        if not df_anchung_summary.empty:
-            df_anchung_summary.to_excel(writer, index=False, sheet_name='Tổng_hợp_An_Chung')
+            df_anchung.to_excel(writer, index=False, sheet_name='An_Chung_ChiTiet')
+
     output.seek(0)
-    
-    return send_file(output, as_attachment=True, download_name=f'report_{datetime.now().strftime("%Y%m%d")}.xlsx')
+    return send_file(output, as_attachment=True, download_name=f"report_{datetime.now().strftime('%Y%m%d')}.xlsx")
 
 @app.route('/report/export-anchung')
 @login_required
