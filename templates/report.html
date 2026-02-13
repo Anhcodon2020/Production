@@ -94,6 +94,7 @@
     <div class="tabs">
         <button class="tab-btn active" onclick="openTab(event, 'tab-employee')">Năng Suất Nhân Viên</button>
         <button class="tab-btn" onclick="openTab(event, 'tab-customer')">Theo Khách Hàng</button>
+        <button class="tab-btn" onclick="openTab(event, 'tab-anchung')">Thống Kê Ăn Chung</button>
         <button class="tab-btn" onclick="openTab(event, 'tab-detail')">Chi Tiết Nhật Ký</button>
     </div>
 
@@ -181,7 +182,48 @@
         {% endif %}
     </div>
 
-    <!-- Tab 3: Detail Report -->
+    <!-- Tab 3: An Chung Report -->
+    <div id="tab-anchung" class="tab-content">
+        {% if an_chung_summary_list %}
+        <div class="card">
+            <div class="card-header">Tổng Hợp Nhân Viên Ăn Chung</div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mã NV</th>
+                            <th>Mã SL</th>
+                            <th>Họ và Tên</th>
+                            <th>Vị trí</th>
+                            <th>Số lượt tham gia</th>
+                            <th>Tổng CBM (Chưa quy đổi)</th>
+                            <th>Tổng Sản Lượng (Đã quy đổi)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in an_chung_summary_list %}
+                        <tr>
+                            <td>{{ item.employee_code }}</td>
+                            <td>{{ item.masl }}</td>
+                            <td style="font-weight: 600;">{{ item.full_name }}</td>
+                            <td>{{ item.position }}</td>
+                            <td>{{ item.count }}</td>
+                            <td>{{ "{:,.2f}".format(item.total_productivity) }}</td>
+                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(item.total_quantity) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="card" style="text-align: center; padding: 40px; color: #718096;">
+            Không có dữ liệu nhân viên An Chung trong khoảng thời gian này.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Tab 4: Detail Report -->
     <div id="tab-detail" class="tab-content">
         {% if records %}
         <div class="card">

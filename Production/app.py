@@ -1382,13 +1382,32 @@ def report():
     an_chung_data = []
     an_chung_emps = Employee.query.filter_by(employee_type='An_chung').all()
     
+    # Hàm chuẩn hóa chuỗi để so sánh chính xác hơn
+    def normalize_key(s):
+        if not s: return None
+        return unicodedata.normalize('NFC', str(s)).strip().lower()
+
     # Map để tra cứu nhanh: key -> Employee Object
     ac_map = {}
+    # Map để tổng hợp số liệu (bao gồm cả nhân viên chưa có sản lượng)
+    summary_map = {}
+
     for emp in an_chung_emps:
-        if emp.masl: ac_map[emp.masl.strip().lower()] = emp
-        if emp.employee_code: ac_map[emp.employee_code.strip().lower()] = emp
-        if emp.full_name: ac_map[emp.full_name.strip().lower()] = emp
+        if emp.masl: ac_map[normalize_key(emp.masl)] = emp
+        if emp.employee_code: ac_map[normalize_key(emp.employee_code)] = emp
+        if emp.full_name: ac_map[normalize_key(emp.full_name)] = emp
         
+        # Khởi tạo dữ liệu tổng hợp cho TẤT CẢ nhân viên An Chung
+        summary_map[emp.employee_code] = {
+            'employee_code': emp.employee_code,
+            'masl': emp.masl,
+            'full_name': emp.full_name,
+            'position': emp.position,
+            'total_productivity': 0.0,
+            'total_quantity': 0.0,
+            'count': 0
+        }
+
     for r in records:
         workers = [
             r.tally_id, r.xenang_id, 
@@ -1398,7 +1417,7 @@ def report():
         seen_in_row = set()
         for w_str in workers:
             if not w_str: continue
-            w_key = str(w_str).strip().lower()
+            w_key = normalize_key(w_str)
             if w_key in ac_map:
                 emp = ac_map[w_key]
                 if emp.id in seen_in_row: continue
@@ -1416,7 +1435,22 @@ def report():
                     'quantity': r.quantity
                 })
 
-    return render_template('report.html', records=records, summary=summary, top_employees=top_employees, customer_summary=customer_summary, an_chung_data=an_chung_data, from_date=from_date, to_date=to_date)
+    # Cập nhật số liệu từ dữ liệu chi tiết vào bảng tổng hợp
+    for item in an_chung_data:
+        code = item['employee_code']
+        if code in summary_map:
+            
+            p_val = item['productivity_value'] if item['productivity_value'] is not None else 0.0
+            q_val = item['quantity'] if item['quantity'] is not None else 0.0
+            
+            summary_map[code]['total_productivity'] += p_val
+            summary_map[code]['total_quantity'] += q_val
+            summary_map[code]['count'] += 1
+        
+    an_chung_summary_list = list(summary_map.values())
+    an_chung_summary_list.sort(key=lambda x: x['full_name'])
+
+    return render_template('report.html', records=records, summary=summary, top_employees=top_employees, customer_summary=customer_summary, an_chung_data=an_chung_data, an_chung_summary_list=an_chung_summary_list, from_date=from_date, to_date=to_date)
 
 @app.route('/report/export')
 @login_required
@@ -1571,6 +1605,102 @@ def export_report():
     output.seek(0)
     
     return send_file(output, as_attachment=True, download_name=f'report_{datetime.now().strftime("%Y%m%d")}.xlsx')
+
+@app.route('/report/export-anchung')
+@login_required
+@view_required
+def export_anchung():
+    if not current_user.can_export:
+        flash('Bạn không có quyền xuất báo cáo.', 'danger')
+        return redirect(url_for('report'))
+        
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    
+    query = LaborProductivity.query
+    if from_date: query = query.filter(LaborProductivity.work_date >= from_date)
+    if to_date: query = query.filter(LaborProductivity.work_date <= to_date)
+    
+    records = query.order_by(LaborProductivity.work_date.desc()).all()
+    
+    an_chung_data = []
+    an_chung_emps = Employee.query.filter_by(employee_type='An_chung').all()
+    
+    def normalize_key(s):
+        if not s: return None
+        return unicodedata.normalize('NFC', str(s)).strip().lower()
+
+    ac_map = {}
+    summary_map = {} # Map tổng hợp cho Excel
+
+    for emp in an_chung_emps:
+        if emp.masl: ac_map[normalize_key(emp.masl)] = emp
+        if emp.employee_code: ac_map[normalize_key(emp.employee_code)] = emp
+        if emp.full_name: ac_map[normalize_key(emp.full_name)] = emp
+        
+        # Khởi tạo dòng cho Excel
+        summary_map[emp.employee_code] = {
+            'Mã NV': emp.employee_code,
+            'Mã SL': emp.masl,
+            'Họ và tên': emp.full_name,
+            'Vị trí': emp.position,
+            'Số lượt tham gia': 0,
+            'Số CBM chưa quy đổi': 0.0,
+            'Số cbm đã quy đổi': 0.0
+        }
+        
+    for r in records:
+        workers = [
+            r.tally_id, r.xenang_id, 
+            r.congnhan1_id, r.congnhan2_id, r.congnhan3_id, 
+            r.congnhan4_id, r.congnhan5_id, r.congnhan6_id
+        ]
+        seen_in_row = set()
+        for w_str in workers:
+            if not w_str: continue
+            w_key = normalize_key(w_str)
+            if w_key in ac_map:
+                emp = ac_map[w_key]
+                if emp.id in seen_in_row: continue
+                seen_in_row.add(emp.id)
+                
+                an_chung_data.append({
+                    'Ngày': r.work_date,
+                    'Mã NV': emp.employee_code,
+                    'Mã SL': emp.masl,
+                    'Họ và tên': emp.full_name,
+                    'Vị trí': emp.position,
+                    'Task': r.task_id,
+                    'Số CBM chưa quy đổi': r.productivity_value,
+                    'Chỉ số quy đổi': r.conversion_index,
+                    'Số cbm đã quy đổi': r.quantity
+                })
+                
+                # Cộng dồn vào summary_map
+                code = emp.employee_code
+                if code in summary_map:
+                    summary_map[code]['Số lượt tham gia'] += 1
+                    summary_map[code]['Số CBM chưa quy đổi'] += (r.productivity_value or 0.0)
+                    summary_map[code]['Số cbm đã quy đổi'] += (r.quantity or 0.0)
+
+    df_anchung = pd.DataFrame(an_chung_data)
+    
+    # Tạo DataFrame tổng hợp từ summary_map (đầy đủ nhân viên)
+    summary_list = list(summary_map.values())
+    summary_list.sort(key=lambda x: x['Họ và tên'])
+    df_summary = pd.DataFrame(summary_list)
+    
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_summary.to_excel(writer, index=False, sheet_name='Tong_Hop')
+        if not df_anchung.empty:
+            df_anchung.to_excel(writer, index=False, sheet_name='Chi_Tiet')
+        else:
+            pd.DataFrame(['Không có dữ liệu chi tiết']).to_excel(writer, index=False, sheet_name='Chi_Tiet')
+
+    output.seek(0)
+    return send_file(output, as_attachment=True, download_name=f'AnChung_{datetime.now().strftime("%Y%m%d")}.xlsx')
 
 @app.route('/import-data/template')
 @login_required

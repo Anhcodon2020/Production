@@ -130,6 +130,8 @@
                             Thời vụ
                         {% elif emp.employee_type == 'Khoan' %}
                             Khoán sản lượng
+                        {% elif emp.employee_type == 'An_chung' %}
+                            Làm chung
                         {% endif %}
                     </td>
                     <td>{{ emp.masl or '' }}</td>
@@ -229,6 +231,7 @@
             <option value="Cong_nhat">Công việc theo ngày</option>
             <option value="thoi_vu">Thời vụ</option>
             <option value="Khoan">Khoán sản lượng</option>
+            <option value="An_chung">Làm chung</option>
         </select>
       </div>
       <div class="form-group">

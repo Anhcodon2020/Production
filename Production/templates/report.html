@@ -184,36 +184,37 @@
 
     <!-- Tab 3: An Chung Report -->
     <div id="tab-anchung" class="tab-content">
-        {% if an_chung_data %}
+        {% if an_chung_summary_list %}
         <div class="card">
-            <div class="card-header">Báo Cáo Sản Lượng Nhân Viên An Chung</div>
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Thống Kê Tổng Hợp Nhân Viên An Chung</span>
+                <a href="{{ url_for('export_anchung', from_date=from_date, to_date=to_date) }}" class="btn btn-success" style="padding: 5px 15px; font-size: 13px;">
+                    <i class="fa fa-file-excel-o"></i> Xuất Excel Riêng
+                </a>
+            </div>
             <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
-                            <th>Ngày</th>
-                            <th>Employee Code</th>
+                            <th>Mã NV</th>
                             <th>Mã SL</th>
-                            <th>Họ Tên</th>
-                            <th>Vị Trí</th>
-                            <th>Task</th>
-                            <th>Productivity Value</th>
-                            <th>Conversion Index</th>
-                            <th>Quantity</th>
+                            <th>Họ và Tên</th>
+                            <th>Vị trí</th>
+                            <th>Số lượt tham gia</th>
+                            <th>Tổng CBM (Chưa quy đổi)</th>
+                            <th>Tổng Sản Lượng (Đã quy đổi)</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for item in an_chung_data %}
+                        {% for item in an_chung_summary_list %}
                         <tr>
-                            <td>{{ item.work_date.strftime('%d/%m/%Y') if item.work_date else '' }}</td>
                             <td>{{ item.employee_code }}</td>
-                            <td>{{ item.masl or '' }}</td>
+                            <td>{{ item.masl }}</td>
                             <td style="font-weight: 600;">{{ item.full_name }}</td>
-                            <td>{{ item.position or '' }}</td>
-                            <td>{{ item.task_id }}</td>
-                            <td>{{ "{:,.2f}".format(item.productivity_value) if item.productivity_value else 0 }}</td>
-                            <td>{{ item.conversion_index }}</td>
-                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(item.quantity) if item.quantity else 0 }}</td>
+                            <td>{{ item.position }}</td>
+                            <td>{{ item.count }}</td>
+                            <td>{{ "{:,.2f}".format(item.total_productivity) }}</td>
+                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(item.total_quantity) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -222,7 +223,8 @@
         </div>
         {% else %}
         <div class="card" style="text-align: center; padding: 40px; color: #718096;">
-            Không có dữ liệu nhân viên An Chung trong khoảng thời gian này.
+            <p>Không có dữ liệu thống kê.</p>
+            <small>Vui lòng kiểm tra: <br>1. Đã chuyển loại nhân viên sang "Làm chung" chưa?<br>2. Tên nhân viên trong file Excel có khớp với phần mềm không?</small>
         </div>
         {% endif %}
     </div>
