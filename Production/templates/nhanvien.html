@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý Nhân viên{% endblock %}
+
+{% block content %}
+<style>
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        font-size: 16px;
+    }
+    th, td {
+        padding: 12px 15px;
+        border: 1px solid #ddd;
+        text-align: left;
+    }
+    th {
+        background-color: #f8f9fa;
+        font-weight: bold;
+        color: #333;
+    }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    tr:hover { background-color: #f1f1f1; }
+    .status-active { color: #28a745; font-weight: bold; }
+    .status-inactive { color: #dc3545; font-weight: bold; }
+
+    /* Modal Styles */
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+    .modal-content { background-color: #fefefe; margin: 10% auto; padding: 30px; border: 1px solid #888; width: 500px; border-radius: 8px; position: relative; text-align: left; }
+    .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close:hover { color: black; }
+    
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+    .form-group input[type="text"], .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+    
+    .btn-add { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-bottom: 15px; float: right; }
+    .btn-add:hover { background-color: #218838; }
+    
+    .btn-save { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px; }
+    .btn-save:hover { background-color: #0069d9; }
+    
+    .btn-edit { background-color: #ffc107; color: black; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-edit:hover { background-color: #e0a800; }
+
+    .btn-delete { background-color: #dc3545; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 5px; }
+    .btn-delete:hover { background-color: #c82333; }
+
+    /* Pagination Styles */
+    .pagination { display: flex; justify-content: center; margin-top: 20px; list-style: none; padding: 0; }
+    .pagination a, .pagination span { padding: 8px 16px; text-decoration: none; border: 1px solid #ddd; color: #333; margin: 0 4px; border-radius: 4px; }
+    .pagination a:hover { background-color: #ddd; }
+    .pagination .active { background-color: #2c3e50; color: white; border: 1px solid #2c3e50; }
+    .pagination .disabled { color: #ccc; pointer-events: none; border-color: #eee; }
+
+    .clearfix::after { content: ""; clear: both; display: table; }
+
+    /* Alert Styles */
+    .alert {
+        padding: 15px;
+        margin-bottom: 20px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        text-align: left;
+        width: 90%;
+        max-width: 1200px;
+        margin-left: auto;
+        margin-right: auto;
+        box-sizing: border-box;
+    }
+    .alert-success {
+        color: #155724;
+        background-color: #d4edda;
+        border-color: #c3e6cb;
+    }
+    .alert-danger {
+        color: #721c24;
+        background-color: #f8d7da;
+        border-color: #f5c6cb;
+    }
+</style>
+
+<div class="box" style="width: 90%; max-width: 1200px;">    <div class="clearfix">
+        <h1 style="float: left; margin: 0;">Danh sách Nhân viên</h1>
+        <button class="btn-add" onclick="openAddModal()">+ Thêm nhân viên</button>
+    </div>
+
+    <!-- Search Form -->
+    <div class="search-container" style="margin-top: 20px; text-align: left;">
+        <form method="GET" action="{{ url_for('nhan_vien') }}">
+            <input type="text" name="search_masl" placeholder="Tìm theo Mã số lương..." value="{{ search_term or '' }}" style="width: 250px; padding: 10px; border-radius: 4px; border: 1px solid #ddd; display: inline-block;">
+            <button type="submit" style="padding: 10px 15px; border-radius: 4px; border: none; background-color: #007bff; color: white; cursor: pointer;">Tìm kiếm</button>
+            <a href="{{ url_for('nhan_vien') }}" style="padding: 10px 15px; text-decoration: none;">Xóa tìm</a>
+        </form>
+    </div>
+    
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Mã NV</th>
+                    <th>Họ tên</th>
+                    <th>Vị trí</th>
+                    <th>Loại NV</th>
+                    <th>Mã SL</th>
+                    <th>Ghi chú</th>
+                    <th>Trạng thái</th>
+                    <th>Ngày tạo</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if employees and employees.items %}
+                {% for emp in employees.items %}
+                <tr>
+                    <td>{{ emp.id }}</td>
+                    <td>{{ emp.employee_code }}</td>
+                    <td>{{ emp.full_name }}</td>
+                    <td>{{ emp.position or '' }}</td>
+                    <td>
+                        {% if emp.employee_type == 'Cong_nhat' %}
+                            Công nhật
+                        {% elif emp.employee_type == 'thoi_vu' %}
+                            Thời vụ
+                        {% elif emp.employee_type == 'Khoan' %}
+                            Khoán sản lượng
+                        {% elif emp.employee_type == 'An_chung' %}
+                            Làm chung    
+                        {% endif %}
+                    </td>
+                    <td>{{ emp.masl or '' }}</td>
+                    <td>{{ emp.info or '' }}</td>
+                    <td>
+                        {% if emp.is_active %}
+                            <span class="status-active">Hoạt động</span>
+                        {% else %}
+                            <span class="status-inactive">Ngưng</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ emp.created_at }}</td>
+                    <td>
+                        <button class="btn-edit" 
+                                data-id="{{ emp.id }}"
+                                data-code="{{ emp.employee_code }}"
+                                data-name="{{ emp.full_name }}"
+                                data-pos="{{ emp.position or '' }}"
+                                data-type="{{ emp.employee_type }}"
+                                data-masl="{{ emp.masl or '' }}"
+                                data-info="{{ emp.info or '' }}"
+                                data-active="{{ 'true' if emp.is_active else 'false' }}"
+                                onclick="openEditModal(this)">Sửa</button>
+                        <button class="btn-delete" onclick="confirmDelete('{{ emp.id }}')">Xóa</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr>
+                    <td colspan="10" style="text-align: center; padding: 20px;">Không tìm thấy nhân viên nào.</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        <!-- Pagination Controls -->
+        {% if employees and employees.pages > 1 %}
+        <div class="pagination">
+            <!-- Nút Trước -->
+            {% if employees.has_prev %}
+                <a href="{{ url_for('nhan_vien', page=employees.prev_num, search_masl=search_term) }}">&laquo; Trước</a>
+            {% else %}
+                <span class="disabled">&laquo; Trước</span>
+            {% endif %}
+
+            <!-- Số trang -->
+            {% for page_num in employees.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                    {% if employees.page == page_num %}
+                        <span class="active">{{ page_num }}</span>
+                    {% else %}
+                        <a href="{{ url_for('nhan_vien', page=page_num, search_masl=search_term) }}">{{ page_num }}</a>
+                    {% endif %}
+                {% else %}
+                    <span class="disabled">...</span>
+                {% endif %}
+            {% endfor %}
+
+            <!-- Nút Sau -->
+            {% if employees.has_next %}
+                <a href="{{ url_for('nhan_vien', page=employees.next_num, search_masl=search_term) }}">Sau &raquo;</a>
+            {% else %}
+                <span class="disabled">Sau &raquo;</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal Thêm Nhân Viên -->
+<div id="addModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="document.getElementById('addModal').style.display='none'">&times;</span>
+    <h2 style="margin-top: 0; text-align: center;">Thêm Nhân Viên Mới</h2>
+    <form method="POST" action="{{ url_for('nhan_vien') }}">
+      <div class="form-group">
+        <label>Mã Nhân Viên (*)</label>
+        <input type="text" name="employee_code" required placeholder="VD: NV001">
+      </div>
+      <div class="form-group">
+        <label>Họ và Tên (*)</label>
+        <input type="text" name="full_name" required placeholder="VD: Nguyễn Văn A">
+      </div>
+      <div class="form-group">
+        <label>Vị trí (*)</label>
+        <select name="position">
+            <option value="">-- Chọn vị trí --</option>            
+            <option value="Kiểm đếm">Kiểm đếm</option>
+            <option value="Tài xế xe nâng thấp">Tài xế xe nâng thấp</option>
+            <option value="Tài xế xe nâng cao">Tài xế xe nâng cao</option>
+            <option value="Bốc xếp">Bốc xếp</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Loại Nhân Viên</label>
+        <select name="employee_type">
+            <option value="Cong_nhat">Công việc theo ngày</option>
+            <option value="thoi_vu">Thời vụ</option>
+            <option value="Khoan">Khoán sản lượng</option>
+            <option value="An_chung">Làm chung</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Mã sản lượng</label>
+        <input type="text" name="masl" placeholder="VD: SL001">
+      </div>
+      <div class="form-group">
+        <label>Ghi chú</label>
+        <input type="text" name="info" placeholder="Thông tin thêm">
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="is_active" checked style="width: auto;"> Đang làm việc</label>
+      </div>
+      <button type="submit" class="btn-save">Lưu thông tin</button>
+    </form>
+  </div>
+</div>
+
+<!-- Thêm thư viện SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+window.onclick = function(event) {
+  if (event.target == document.getElementById('addModal')) {
+    document.getElementById('addModal').style.display = "none";
+  }
+}
+
+// Hiển thị thông báo Flash bằng SweetAlert2 Toast
+window.addEventListener('DOMContentLoaded', (event) => {
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: '{{ "error" if category == "danger" else category }}',
+                title: '{{ message }}',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true
+            });
+        {% endfor %}
+    {% endif %}
+    {% endwith %}
+});
+
+function openAddModal() {
+    var modal = document.getElementById('addModal');
+    var form = modal.querySelector('form');
+    
+    // Reset form về trạng thái thêm mới
+    modal.querySelector('h2').innerText = "Thêm Nhân Viên Mới";
+    form.action = "{{ url_for('nhan_vien') }}";
+    form.reset();
+    
+    modal.style.display = "block";
+}
+
+function openEditModal(btn) {
+    var modal = document.getElementById('addModal');
+    var form = modal.querySelector('form');
+    
+    // Cập nhật tiêu đề và action của form
+    modal.querySelector('h2').innerText = "Sửa Thông Tin Nhân Viên";
+    form.action = "/nhan-vien/edit/" + btn.getAttribute('data-id');
+    
+    // Điền dữ liệu cũ vào form
+    form.querySelector('[name="employee_code"]').value = btn.getAttribute('data-code');
+    form.querySelector('[name="full_name"]').value = btn.getAttribute('data-name');
+    form.querySelector('[name="position"]').value = btn.getAttribute('data-pos'); // Chọn chức vụ
+    form.querySelector('[name="employee_type"]').value = btn.getAttribute('data-type');
+    form.querySelector('[name="masl"]').value = btn.getAttribute('data-masl');
+    form.querySelector('[name="info"]').value = btn.getAttribute('data-info');
+    form.querySelector('[name="is_active"]').checked = (btn.getAttribute('data-active') === 'true');
+    
+    modal.style.display = "block";
+}
+
+function confirmDelete(id) {
+    Swal.fire({
+        title: 'Bạn có chắc chắn?',
+        text: "Bạn muốn xóa nhân viên này? Hành động này không thể hoàn tác.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Xóa ngay',
+        cancelButtonText: 'Hủy'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            var form = document.createElement("form");
+            form.method = "POST";
+            form.action = "/nhan-vien/delete/" + id;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
+}
+</script>
+{% endblock %}

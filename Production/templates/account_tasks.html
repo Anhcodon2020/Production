@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý Account Tasks{% endblock %}
+
+{% block content %}
+<style>
+    /* Reuse styles */
+    .table-container { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 16px; }
+    th, td { padding: 12px 15px; border: 1px solid #ddd; text-align: left; }
+    th { background-color: #f8f9fa; font-weight: bold; color: #333; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    tr:hover { background-color: #f1f1f1; }
+    
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+    .modal-content { background-color: #fefefe; margin: 10% auto; padding: 30px; border: 1px solid #888; width: 500px; border-radius: 8px; position: relative; text-align: left; }
+    .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close:hover { color: black; }
+    
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+    .form-group input[type="text"], .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+    
+    .btn-add { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-bottom: 15px; float: right; }
+    .btn-save { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px; }
+    .btn-edit { background-color: #ffc107; color: black; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-delete { background-color: #dc3545; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 5px; }
+    
+    .pagination { display: flex; justify-content: center; margin-top: 20px; list-style: none; padding: 0; }
+    .pagination a, .pagination span { padding: 8px 16px; text-decoration: none; border: 1px solid #ddd; color: #333; margin: 0 4px; border-radius: 4px; }
+    .pagination .active { background-color: #2c3e50; color: white; border: 1px solid #2c3e50; }
+    .pagination .disabled { color: #ccc; pointer-events: none; border-color: #eee; }
+    
+    .clearfix::after { content: ""; clear: both; display: table; }
+    .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; width: 90%; max-width: 1200px; margin: 0 auto; }
+    .alert-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+    .alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+</style>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="box" style="width: 90%; max-width: 1200px; margin: 0 auto;">
+    <div class="clearfix">
+        <h1 style="float: left; margin: 0;">
+            {% if selected_account %}
+                Tasks của: {{ selected_account.account_name }} ({{ selected_account.account_code }})
+            {% else %}
+                Danh sách Account Tasks
+            {% endif %}
+        </h1>
+        <button class="btn-add" onclick="openAddModal()">+ Thêm Task</button>
+    </div>
+
+    <div class="search-container" style="margin-top: 20px; text-align: left;">
+        <form method="GET" action="{{ url_for('account_tasks') }}">
+            {% if selected_account %}
+                <input type="hidden" name="account_id" value="{{ selected_account.id }}">
+            {% endif %}
+            <input type="text" name="search" placeholder="Tìm theo Mã Task hoặc Tên Task..." value="{{ search_term or '' }}" style="width: 300px; padding: 10px; border-radius: 4px; border: 1px solid #ddd; display: inline-block;">
+            <button type="submit" style="padding: 10px 15px; border-radius: 4px; border: none; background-color: #007bff; color: white; cursor: pointer;">Tìm kiếm</button>
+            <a href="{{ url_for('account_tasks', account_id=selected_account.id if selected_account else None) }}" style="padding: 10px 15px; text-decoration: none;">Xóa tìm</a>
+            {% if selected_account %}
+                <a href="{{ url_for('account_tasks') }}" style="margin-left: 10px; color: #666;">Xem tất cả</a>
+            {% endif %}
+        </form>
+    </div>
+    
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Account</th>
+                    <th>Mã Task</th>
+                    <th>Tên Task</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if tasks and tasks.items %}
+                {% for task in tasks.items %}
+                <tr>
+                    <td>{{ task.id }}</td>
+                    <td>{{ task.account.account_code }} <br><small>{{ task.account.account_name }}</small></td>
+                    <td>{{ task.task_code }}</td>
+                    <td>{{ task.task_name }}</td>
+                    <td>
+                        <button class="btn-edit" 
+                                data-id="{{ task.id }}"
+                                data-account-id="{{ task.account_id }}"
+                                data-code="{{ task.task_code }}"
+                                data-name="{{ task.task_name }}"
+                                onclick="openEditModal(this)">Sửa</button>
+                        <button class="btn-delete" onclick="confirmDelete('{{ task.id }}')">Xóa</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 20px;">Không tìm thấy task nào.</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        {% if tasks and tasks.pages > 1 %}
+        <div class="pagination">
+            {% if tasks.has_prev %}
+                <a href="{{ url_for('account_tasks', page=tasks.prev_num, search=search_term, account_id=selected_account.id if selected_account else None) }}">&laquo; Trước</a>
+            {% else %}
+                <span class="disabled">&laquo; Trước</span>
+            {% endif %}
+            {% for page_num in tasks.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                    {% if tasks.page == page_num %}
+                        <span class="active">{{ page_num }}</span>
+                    {% else %}
+                        <a href="{{ url_for('account_tasks', page=page_num, search=search_term, account_id=selected_account.id if selected_account else None) }}">{{ page_num }}</a>
+                    {% endif %}
+                {% else %}
+                    <span class="disabled">...</span>
+                {% endif %}
+            {% endfor %}
+            {% if tasks.has_next %}
+                <a href="{{ url_for('account_tasks', page=tasks.next_num, search=search_term, account_id=selected_account.id if selected_account else None) }}">Sau &raquo;</a>
+            {% else %}
+                <span class="disabled">Sau &raquo;</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal -->
+<div id="addModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="document.getElementById('addModal').style.display='none'">&times;</span>
+    <h2 id="modalTitle" style="margin-top: 0; text-align: center;">Thêm Task Mới</h2>
+    <form method="POST" action="{{ url_for('account_tasks') }}">
+      <div class="form-group">
+        <label>Account (*)</label>
+        <select name="account_id" required>
+            <option value="">-- Chọn Account --</option>
+            {% for acc in accounts %}
+            <option value="{{ acc.id }}" {% if selected_account and selected_account.id == acc.id %}selected{% endif %}>{{ acc.account_code }} - {{ acc.account_name }}</option>
+            {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Mã Task (*)</label>
+        <input type="text" name="task_code" required placeholder="VD: T01">
+      </div>
+      <div class="form-group">
+        <label>Tên Task (*)</label>
+        <input type="text" name="task_name" required placeholder="VD: Bốc xếp hàng hóa">
+      </div>
+      <button type="submit" class="btn-save">Lưu thông tin</button>
+    </form>
+  </div>
+</div>
+
+<script>
+window.onclick = function(event) { if (event.target == document.getElementById('addModal')) { document.getElementById('addModal').style.display = "none"; } }
+window.addEventListener('DOMContentLoaded', (event) => { const alerts = document.querySelectorAll('.alert'); if (alerts.length > 0) { setTimeout(() => { alerts.forEach(alert => { alert.style.transition = "opacity 0.5s ease"; alert.style.opacity = "0"; setTimeout(() => alert.remove(), 500); }); }, 3000); } });
+function openAddModal() { var modal = document.getElementById('addModal'); var form = modal.querySelector('form'); document.getElementById('modalTitle').innerText = "Thêm Task Mới"; form.action = "{{ url_for('account_tasks') }}"; form.querySelector('[name="task_code"]').value = ''; form.querySelector('[name="task_name"]').value = ''; modal.style.display = "block"; }
+function openEditModal(btn) { var modal = document.getElementById('addModal'); var form = modal.querySelector('form'); document.getElementById('modalTitle').innerText = "Sửa Task"; form.action = "/account-tasks/edit/" + btn.getAttribute('data-id'); form.querySelector('[name="account_id"]').value = btn.getAttribute('data-account-id'); form.querySelector('[name="task_code"]').value = btn.getAttribute('data-code'); form.querySelector('[name="task_name"]').value = btn.getAttribute('data-name'); modal.style.display = "block"; }
+function confirmDelete(id) { if (confirm("Bạn có chắc chắn muốn xóa task này không?")) { var form = document.createElement("form"); form.method = "POST"; form.action = "/account-tasks/delete/" + id; document.body.appendChild(form); form.submit(); } }
+</script>
+{% endblock %}

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý User{% endblock %}
+
+{% block content %}
+<style>
+    .table-container { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 16px; }
+    th, td { padding: 12px 15px; border: 1px solid #ddd; text-align: left; }
+    th { background-color: #f8f9fa; font-weight: bold; color: #333; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    .status-active { color: #28a745; font-weight: bold; }
+    .status-inactive { color: #dc3545; font-weight: bold; }
+    
+    /* Modal Styles */
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+    .modal-content { background-color: #fefefe; margin: 10% auto; padding: 30px; border: 1px solid #888; width: 500px; border-radius: 8px; position: relative; text-align: left; }
+    .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close:hover { color: black; }
+    
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+    .form-group input[type="text"], .form-group input[type="password"], .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+    
+    .btn-add { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; float: right; }
+    .btn-save { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px; }
+    .btn-edit { background-color: #ffc107; color: black; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-delete { background-color: #dc3545; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 5px; }
+    
+    .role-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; color: white; }
+    .role-ADMIN { background-color: #dc3545; }
+    .role-UPDATE { background-color: #ffc107; color: black; }
+    .role-VIEW { background-color: #17a2b8; }
+</style>
+
+<div class="box" style="width: 90%; max-width: 1200px;">
+    <div style="overflow: hidden; margin-bottom: 20px;">
+        <h1 style="float: left; margin: 0;">Quản lý User & Phân quyền</h1>
+        <button class="btn-add" onclick="openAddModal()">+ Thêm User</button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Mật khẩu</th>
+                    <th>Họ tên</th>
+                    <th>Quyền (Role)</th>
+                    <th>Trạng thái</th>
+                    <th>Xuất Excel</th>
+                    <th>Ngày tạo</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if users and users.items %}
+                {% for u in users.items %}
+                <tr>
+                    <td>{{ u.id }}</td>
+                    <td><strong>{{ u.username }}</strong></td>
+                    <td>
+                        {% if current_user.username == 'admin' %}
+                            <span title="{{ u.password_hash }}">{{ u.password_hash[:15] }}...</span>
+                        {% else %}
+                            ******
+                        {% endif %}
+                    </td>
+                    <td>{{ u.full_name }}</td>
+                    <td><span class="role-badge role-{{ u.role }}">{{ u.role }}</span></td>
+                    <td>
+                        {% if u.is_active %}
+                            <span class="status-active">Hoạt động</span>
+                        {% else %}
+                            <span class="status-inactive">Khóa</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center;">
+                        {% if u.can_export %}
+                            <span style="color: green; font-weight: bold;">&#10004;</span>
+                        {% else %}
+                            <span style="color: red; font-weight: bold;">&#10008;</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ u.created_at.strftime('%d/%m/%Y') }}</td>
+                    <td>
+                        <button class="btn-edit" 
+                                data-id="{{ u.id }}"
+                                data-username="{{ u.username }}"
+                                data-fullname="{{ u.full_name }}"
+                                data-role="{{ u.role }}"
+                                data-active="{{ 'true' if u.is_active else 'false' }}"
+                                data-export="{{ 'true' if u.can_export else 'false' }}"
+                                onclick="openEditModal(this)">Sửa</button>
+                        {% if u.username != 'admin' %}
+                        <button type="button" class="btn-delete" onclick="confirmDeleteUser('{{ u.id }}')">Xóa</button>
+                        <form id="delete-form-{{ u.id }}" action="{{ url_for('delete_user', id=u.id) }}" method="POST" style="display:none;"></form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr><td colspan="9" style="text-align: center; padding: 20px;">Chưa có user nào.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm/Sửa User -->
+<div id="userModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="document.getElementById('userModal').style.display='none'">&times;</span>
+    <h2 id="modalTitle" style="margin-top: 0; text-align: center;">Thêm User Mới</h2>
+    <form id="userForm" method="POST" action="{{ url_for('manage_users') }}">
+      <div class="form-group">
+        <label>Username (*)</label>
+        <input type="text" name="username" id="username" required>
+      </div>
+      <div class="form-group">
+        <label>Mật khẩu <span id="pw-hint" style="font-weight: normal; font-size: 12px; color: #666;"></span></label>
+        <input type="password" name="password" id="password" required>
+      </div>
+      <div class="form-group">
+        <label>Họ và Tên</label>
+        <input type="text" name="full_name" id="full_name">
+      </div>
+      <div class="form-group">
+        <label>Phân quyền (Role)</label>
+        <select name="role" id="role">
+            <option value="VIEW">VIEW (Chỉ xem)</option>
+            <option value="UPDATE">UPDATE (Được sửa)</option>
+            <option value="ADMIN">ADMIN (Toàn quyền)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="is_active" id="is_active" checked style="width: auto;"> Đang hoạt động</label>
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="can_export" id="can_export" checked style="width: auto;"> Cho phép xuất Excel</label>
+      </div>
+      <button type="submit" class="btn-save">Lưu User</button>
+    </form>
+  </div>
+</div>
+
+<!-- Thêm thư viện SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+    // Hiển thị thông báo Flash bằng SweetAlert2 Toast
+    document.addEventListener('DOMContentLoaded', function() {
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: '{{ "error" if category == "danger" else category }}',
+                    title: '{{ message }}',
+                    showConfirmButton: false,
+                    timer: 3000,
+                    timerProgressBar: true
+                });
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+    });
+
+    var modal = document.getElementById('userModal');
+    window.onclick = function(event) { if (event.target == modal) modal.style.display = "none"; }
+
+    function openAddModal() {
+        document.getElementById('modalTitle').innerText = "Thêm User Mới";
+        document.getElementById('userForm').action = "{{ url_for('manage_users') }}";
+        document.getElementById('userForm').reset();
+        document.getElementById('username').readOnly = false;
+        document.getElementById('password').required = true;
+        document.getElementById('pw-hint').innerText = "(*)";
+
+        // Đảm bảo các trường không bị vô hiệu hóa khi thêm mới
+        document.getElementById('role').disabled = false;
+        document.getElementById('is_active').disabled = false;
+
+        modal.style.display = "block";
+    }
+
+    function openEditModal(btn) {
+        document.getElementById('modalTitle').innerText = "Sửa Thông Tin User";
+        document.getElementById('userForm').action = "/users/edit/" + btn.getAttribute('data-id');
+
+        var username = btn.getAttribute('data-username');
+        document.getElementById('username').value = username;
+        document.getElementById('username').readOnly = true;
+        document.getElementById('full_name').value = btn.getAttribute('data-fullname');
+        document.getElementById('role').value = btn.getAttribute('data-role');
+        document.getElementById('is_active').checked = (btn.getAttribute('data-active') === 'true');
+        document.getElementById('can_export').checked = (btn.getAttribute('data-export') === 'true');
+
+        document.getElementById('password').value = "";
+        document.getElementById('password').required = false;
+        document.getElementById('pw-hint').innerText = "(Để trống nếu không đổi)";
+
+        var roleSelect = document.getElementById('role');
+        var activeCheckbox = document.getElementById('is_active');
+
+        // Nếu là user 'admin', vô hiệu hóa các trường nhạy cảm
+        if (username === 'admin') {
+            roleSelect.disabled = true;
+            activeCheckbox.disabled = true;
+        } else {
+            roleSelect.disabled = false;
+            activeCheckbox.disabled = false;
+        }
+
+        modal.style.display = "block";
+    }
+
+    function confirmDeleteUser(id) {
+        Swal.fire({
+            title: 'Bạn có chắc chắn?',
+            text: "Bạn muốn xóa user này? Hành động này không thể hoàn tác!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Xóa User',
+            cancelButtonText: 'Hủy'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                document.getElementById('delete-form-' + id).submit();
+            }
+        });
+    }
+</script>
+{% endblock %}

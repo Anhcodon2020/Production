@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Trang chủ{% endblock %}
+
+{% block content %}
+<style>
+    .dashboard-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        text-align: left;
+    }
+    .welcome-banner {
+        background-color: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    .welcome-banner h1 { margin-top: 0; color: #2c3e50; }
+    .welcome-banner p { color: #666; font-size: 18px; }
+    
+    .grid-menu {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+    .menu-card {
+        background-color: #fff;
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        text-align: center;
+        transition: transform 0.2s, box-shadow 0.2s;
+        text-decoration: none;
+        color: #333;
+        border: 1px solid #eee;
+    }
+    .menu-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        border-color: #3498db;
+    }
+    .menu-card h3 { margin: 15px 0 10px; color: #2c3e50; }
+    .menu-card p { color: #777; font-size: 14px; margin: 0; }
+    .icon { font-size: 40px; margin-bottom: 10px; display: block; }
+    
+    .system-status {
+        margin-top: 40px;
+        padding: 15px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        font-size: 14px;
+        color: #555;
+        text-align: center;
+    }
+</style>
+
+<div class="dashboard-container">
+    <div class="welcome-banner">
+        <h1>Xin chào, {{ current_user.full_name or current_user.username }}!</h1>
+        <p>Chào mừng bạn đến với Hệ thống Quản lý Sản xuất & Năng suất.</p>
+    </div>
+
+    <div class="grid-menu">
+        {% if current_user.role == 'ADMIN' %}
+        <a href="{{ url_for('nhan_vien') }}" class="menu-card">
+            <span class="icon">👥</span>
+            <h3>Quản lý Nhân viên</h3>
+            <p>Thêm, sửa, xóa thông tin nhân viên</p>
+        </a>
+        <a href="{{ url_for('khach_hang') }}" class="menu-card">
+            <span class="icon">🏢</span>
+            <h3>Quản lý Khách hàng</h3>
+            <p>Danh sách khách hàng và tài khoản</p>
+        </a>
+        <a href="{{ url_for('account_conversion_index') }}" class="menu-card">
+            <span class="icon">⚙️</span>
+            <h3>Định mức & Cấu hình</h3>
+            <p>Thiết lập định mức chuyển đổi</p>
+        </a>
+        {% endif %}
+
+        {% if current_user.role in ['ADMIN', 'UPDATE'] %}
+        <a href="{{ url_for('import_data') }}" class="menu-card">
+            <span class="icon">📥</span>
+            <h3>Import Dữ liệu</h3>
+            <p>Nhập dữ liệu sản xuất từ Excel</p>
+        </a>
+        {% endif %}
+
+        {% if current_user.role in ['ADMIN', 'VIEW'] %}
+        <a href="{{ url_for('report') }}" class="menu-card">
+            <span class="icon">📊</span>
+            <h3>Báo cáo Thống kê</h3>
+            <p>Xem báo cáo năng suất và sản lượng</p>
+        </a>
+        {% endif %}
+        
+        <a href="{{ url_for('change_password') }}" class="menu-card">
+            <span class="icon">🔒</span>
+            <h3>Đổi Mật khẩu</h3>
+            <p>Cập nhật mật khẩu cá nhân</p>
+        </a>
+    </div>
+
+    <div class="system-status">
+        <p>Trạng thái hệ thống: 
+            {% if 'Lỗi' in status %}
+                <span style="color: red; font-weight: bold;">{{ status }}</span>
+            {% else %}
+                <span style="color: green; font-weight: bold;">Hoạt động tốt</span> ({{ version }})
+            {% endif %}
+        </p>
+    </div>
+</div>
+{% endblock %}

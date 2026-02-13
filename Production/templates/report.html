@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}Báo Cáo Tổng Hợp{% endblock %}
+
+{% block content %}
+<style>
+    /* General Layout */
+    .report-wrapper { width: 95%; max-width: 1200px; margin: 0 auto; }
+    
+    /* Filter Bar */
+    .filter-card {
+        background: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+    .filter-form { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+    .form-group { margin: 0; }
+    .form-control { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; }
+    
+    /* Buttons */
+    .btn { padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: all 0.2s; }
+    .btn-primary { background-color: #3498db; color: white; }
+    .btn-primary:hover { background-color: #2980b9; }
+    .btn-success { background-color: #2ecc71; color: white; }
+    .btn-success:hover { background-color: #27ae60; }
+
+    /* Tabs */
+    .tabs { display: flex; border-bottom: 2px solid #eee; margin-bottom: 20px; }
+    .tab-btn {
+        padding: 12px 20px;
+        background: none;
+        border: none;
+        border-bottom: 3px solid transparent;
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 600;
+        color: #718096;
+        transition: all 0.3s;
+    }
+    .tab-btn:hover { color: #3498db; }
+    .tab-btn.active { color: #3498db; border-bottom-color: #3498db; }
+
+    /* Content Sections */
+    .tab-content { display: none; animation: fadeIn 0.4s; }
+    .tab-content.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Cards for Charts/Tables */
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); padding: 25px; margin-bottom: 20px; border: 1px solid #eaeaea; }
+    .card-header { font-size: 18px; font-weight: 600; color: #2c3e50; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+
+    /* Tables */
+    .table-responsive { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { background-color: #f8f9fa; color: #4a5568; font-weight: 600; padding: 12px 15px; text-align: left; border-bottom: 2px solid #eaeaea; white-space: nowrap; }
+    td { padding: 12px 15px; border-bottom: 1px solid #eaeaea; color: #2d3748; }
+    tr:hover { background-color: #f8fafc; }
+</style>
+
+<div class="report-wrapper">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h1 style="margin: 0; color: #2c3e50;">Báo Cáo Tổng Hợp</h1>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-card">
+        <form method="GET" action="{{ url_for('report') }}" class="filter-form">
+            <div class="form-group">
+                <label style="margin-right: 5px; font-weight: 500;">Từ ngày:</label>
+                <input type="date" name="from_date" value="{{ from_date or '' }}" class="form-control">
+            </div>
+            <div class="form-group">
+                <label style="margin-right: 5px; font-weight: 500;">Đến ngày:</label>
+                <input type="date" name="to_date" value="{{ to_date or '' }}" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fa fa-filter"></i> Xem Báo Cáo</button>
+        </form>
+        
+        {% if records %}
+        <a href="{{ url_for('export_report', from_date=from_date, to_date=to_date) }}" class="btn btn-success">
+            <i class="fa fa-file-excel-o"></i> Xuất Excel
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Tabs Navigation -->
+    <div class="tabs">
+        <button class="tab-btn active" onclick="openTab(event, 'tab-employee')">Năng Suất Nhân Viên</button>
+        <button class="tab-btn" onclick="openTab(event, 'tab-customer')">Theo Khách Hàng</button>
+        <button class="tab-btn" onclick="openTab(event, 'tab-anchung')">Nhân viên Ăn Chung</button>
+        <button class="tab-btn" onclick="openTab(event, 'tab-detail')">Chi Tiết Nhật Ký</button>
+    </div>
+
+    <!-- Tab 1: Employee Report -->
+    <div id="tab-employee" class="tab-content active">
+        {% if summary %}
+        <div class="card">
+            <div class="card-header">Biểu Đồ Top 5 Nhân Viên</div>
+            <div style="height: 300px; position: relative;">
+                <canvas id="topEmployeesChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Bảng Tổng Hợp Năng Suất</div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tên Nhân Viên</th>
+                            <th>Vai Trò</th>
+                            <th>Số Lượng Cont/Xe</th>
+                            <th>Tổng Sản Lượng (Quy đổi)</th>
+                            <th>Ghi chú</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in summary %}
+                        <tr {% if item.remark %}style="background-color: #fff3cd;"{% endif %}>
+                            <td style="font-weight: 600;">{{ item.name }}</td>
+                            <td>{{ item.role }}</td>
+                            <td>{{ item.count }}</td>
+                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(item.total_qty) }}</td>
+                            <td style="color: #e74c3c; font-size: 13px;">{{ item.remark }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="card" style="text-align: center; padding: 40px; color: #718096;">
+            Chưa có dữ liệu để hiển thị. Vui lòng chọn khoảng thời gian khác.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Tab 2: Customer Report -->
+    <div id="tab-customer" class="tab-content">
+        {% if customer_summary %}
+        <div class="card">
+            <div class="card-header">Biểu Đồ Tỷ Trọng Khách Hàng</div>
+            <div style="height: 350px; position: relative; display: flex; justify-content: center;">
+                <canvas id="customerChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Tổng Hợp Theo Khách Hàng</div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Khách Hàng</th>
+                            <th>Số Lượng Cont/Xe</th>
+                            <th>Tổng Sản Lượng (Quy đổi)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in customer_summary %}
+                        <tr>
+                            <td style="font-weight: 600;">{{ item.name }}</td>
+                            <td>{{ item.count }}</td>
+                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(item.total_qty) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="card" style="text-align: center; padding: 40px; color: #718096;">
+            Chưa có dữ liệu.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Tab 3: An Chung Report -->
+    <div id="tab-anchung" class="tab-content">
+        {% if an_chung_data %}
+        <div class="card">
+            <div class="card-header">Báo Cáo Sản Lượng Nhân Viên An Chung</div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ngày</th>
+                            <th>Employee Code</th>
+                            <th>Mã SL</th>
+                            <th>Họ Tên</th>
+                            <th>Vị Trí</th>
+                            <th>Task</th>
+                            <th>Productivity Value</th>
+                            <th>Conversion Index</th>
+                            <th>Quantity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in an_chung_data %}
+                        <tr>
+                            <td>{{ item.work_date.strftime('%d/%m/%Y') if item.work_date else '' }}</td>
+                            <td>{{ item.employee_code }}</td>
+                            <td>{{ item.masl or '' }}</td>
+                            <td style="font-weight: 600;">{{ item.full_name }}</td>
+                            <td>{{ item.position or '' }}</td>
+                            <td>{{ item.task_id }}</td>
+                            <td>{{ "{:,.2f}".format(item.productivity_value) if item.productivity_value else 0 }}</td>
+                            <td>{{ item.conversion_index }}</td>
+                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(item.quantity) if item.quantity else 0 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="card" style="text-align: center; padding: 40px; color: #718096;">
+            Không có dữ liệu nhân viên An Chung trong khoảng thời gian này.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Tab 3: Detail Report -->
+    <div id="tab-detail" class="tab-content">
+        {% if records %}
+        <div class="card">
+            <div class="card-header">Nhật Ký Làm Việc Chi Tiết</div>
+            <div class="table-responsive" style="max-height: 600px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ngày</th>
+                            <th>Số Cont/Xe</th>
+                            <th>Task</th>
+                            <th>Account</th>
+                            <th>Sản Lượng</th>
+                            <th>Đơn vị</th>
+                            <th>Tally</th>
+                            <th>Xe Nâng</th>
+                            <th>Công Nhân</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in records %}
+                        <tr>
+                            <td>{{ r.work_date.strftime('%d/%m/%Y') if r.work_date else '' }}</td>
+                            <td>{{ r.ref_no }}</td>
+                            <td>{{ r.task_id }}</td>
+                            <td>{{ r.account_id }}</td>
+                            <td>{{ "{:,.2f}".format(r.quantity) if r.quantity else 0 }}</td>
+                            <td>{{ r.unit }}</td>
+                            <td>{{ r.tally_id or '' }}</td>
+                            <td>{{ r.xenang_id or '' }}</td>
+                            <td style="font-size: 13px; color: #555;">
+                                {{ [r.congnhan1_id, r.congnhan2_id, r.congnhan3_id, r.congnhan4_id, r.congnhan5_id, r.congnhan6_id] | select("ne", None) | join(", ") }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="card" style="text-align: center; padding: 40px; color: #718096;">
+            Không tìm thấy dữ liệu trong khoảng thời gian này.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Thêm thư viện Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Thêm thư viện SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+    // Tab Switching Logic
+    function openTab(evt, tabName) {
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tab-content");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+            tabcontent[i].classList.remove("active");
+        }
+        tablinks = document.getElementsByClassName("tab-btn");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }
+        document.getElementById(tabName).style.display = "block";
+        document.getElementById(tabName).classList.add("active");
+        evt.currentTarget.className += " active";
+    }
+
+    // Hiển thị thông báo Flash bằng SweetAlert2 Toast
+    document.addEventListener('DOMContentLoaded', function() {
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: '{{ "error" if category == "danger" else category }}',
+                    title: '{{ message }}',
+                    showConfirmButton: false,
+                    timer: 3000,
+                    timerProgressBar: true
+                });
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+    });
+
+    {% if top_employees %}
+    document.addEventListener("DOMContentLoaded", function() {
+        const ctx = document.getElementById('topEmployeesChart').getContext('2d');
+        
+        // Chuẩn bị dữ liệu từ server
+        const labels = [{% for item in top_employees %}"{{ item.name }} ({{ item.role }})",{% endfor %}];
+        const data = [{% for item in top_employees %}{{ item.total_qty }},{% endfor %}];
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Tổng Sản Lượng (Quy đổi)',
+                    data: data,
+                    backgroundColor: '#3498db',
+                    borderRadius: 4,
+                    barThickness: 40
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { borderDash: [2, 4] } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    });
+    {% endif %}
+
+    {% if customer_summary %}
+    document.addEventListener("DOMContentLoaded", function() {
+        const ctxCust = document.getElementById('customerChart').getContext('2d');
+        const labelsCust = [{% for item in customer_summary %}"{{ item.name }}",{% endfor %}];
+        const dataCust = [{% for item in customer_summary %}{{ item.total_qty }},{% endfor %}];
+        
+        const backgroundColors = [
+            '#3498db', '#2ecc71', '#e74c3c', '#f1c40f', '#9b59b6', 
+            '#1abc9c', '#34495e', '#e67e22', '#7f8c8d', '#c0392b'
+        ];
+
+        new Chart(ctxCust, {
+            type: 'doughnut',
+            data: {
+                labels: labelsCust,
+                datasets: [{
+                    data: dataCust,
+                    backgroundColor: backgroundColors,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'right', labels: { boxWidth: 12 } }
+                }
+            }
+        });
+    });
+    {% endif %}
+</script>
+{% endblock %}

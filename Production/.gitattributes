@@ -1,0 +1,2 @@
+# Đảm bảo file .pem luôn sử dụng LF (Unix style) để tránh cảnh báo trên Windows
+*.pem text eol=lf
