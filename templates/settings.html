@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Cài Đặt Hệ Thống{% endblock %}
+
+{% block content %}
+<div class="box" style="width: 90%; max-width: 800px; margin: 0 auto; text-align: left;">
+    <h1 style="border-bottom: 1px solid #eee; padding-bottom: 10px;">Cài Đặt Hệ Thống</h1>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}" style="width: 100%;">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('settings') }}" style="margin-top: 20px;">
+        <div class="form-group">
+            <label for="exclusion_prefixes" style="font-weight: bold; display: block; margin-bottom: 8px;">
+                Các tiền tố mã nhân viên cần loại trừ khỏi báo cáo:
+            </label>
+            <input type="text" id="exclusion_prefixes" name="exclusion_prefixes" 
+                   value="{{ current_prefixes }}" 
+                   style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                   placeholder="Ví dụ: TB, IF, HB">
+            <p style="color: #666; font-size: 14px; margin-top: 5px;">Nhập các mã phân cách nhau bằng dấu phẩy (,). Ví dụ: <strong>TB, IF, HB</strong></p>
+        </div>
+        <button type="submit" class="btn-save" style="width: auto; padding: 10px 25px; margin-top: 10px;">Lưu Cài Đặt</button>
+    </form>
+</div>
+{% endblock %}

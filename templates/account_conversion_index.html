@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý Định mức Chuyển đổi{% endblock %}
+
+{% block content %}
+<style>
+    /* Reuse styles */
+    .table-container { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 16px; }
+    th, td { padding: 12px 15px; border: 1px solid #ddd; text-align: left; }
+    th { background-color: #f8f9fa; font-weight: bold; color: #333; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    tr:hover { background-color: #f1f1f1; }
+    
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+    .modal-content { background-color: #fefefe; margin: 5% auto; padding: 30px; border: 1px solid #888; width: 500px; border-radius: 8px; position: relative; text-align: left; }
+    .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close:hover { color: black; }
+    
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+    .form-group input[type="text"], .form-group input[type="number"], .form-group input[type="date"], .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+    
+    .btn-add { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-bottom: 15px; float: right; }
+    .btn-save { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px; }
+    .btn-edit { background-color: #ffc107; color: black; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-delete { background-color: #dc3545; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 5px; }
+    
+    .pagination { display: flex; justify-content: center; margin-top: 20px; list-style: none; padding: 0; }
+    .pagination a, .pagination span { padding: 8px 16px; text-decoration: none; border: 1px solid #ddd; color: #333; margin: 0 4px; border-radius: 4px; }
+    .pagination .active { background-color: #2c3e50; color: white; border: 1px solid #2c3e50; }
+    .pagination .disabled { color: #ccc; pointer-events: none; border-color: #eee; }
+    
+    .clearfix::after { content: ""; clear: both; display: table; }
+    .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; width: 90%; max-width: 1200px; margin: 0 auto; }
+    .alert-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+    .alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+
+    /* Search Bar Styles - Thiết kế mới */
+    .search-wrapper form {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .search-input-group {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: 100%;
+        max-width: 450px;
+    }
+    .search-icon {
+        position: absolute;
+        left: 15px;
+        color: #888;
+        font-size: 16px;
+        pointer-events: none;
+    }
+    .styled-search {
+        width: 100%;
+        padding: 12px 40px 12px 40px; /* Padding trái cho icon, phải cho nút xóa */
+        border: 1px solid #e0e0e0;
+        border-radius: 30px; /* Bo tròn */
+        font-size: 15px;
+        transition: all 0.3s ease;
+        background-color: #fff;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    }
+    .styled-search:focus {
+        border-color: #007bff;
+        box-shadow: 0 4px 12px rgba(0,123,255,0.15);
+        outline: none;
+    }
+    .clear-btn {
+        position: absolute;
+        right: 15px;
+        color: #999;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+    }
+    .clear-btn:hover { 
+        background-color: #f0f0f0;
+        color: #dc3545; 
+    }
+    .btn-search-submit {
+        padding: 12px 25px;
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        color: white;
+        border: none;
+        border-radius: 30px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow: 0 4px 6px rgba(0,123,255,0.2);
+    }
+    .btn-search-submit:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 12px rgba(0,123,255,0.3);
+    }
+</style>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="box" style="width: 90%; max-width: 1200px; margin: 0 auto;">
+    <div class="clearfix">
+        <h1 style="float: left; margin: 0;">Định mức Chuyển đổi</h1>
+        <button class="btn-add" onclick="openAddModal()">+ Thêm Định mức</button>
+    </div>
+
+    <div class="search-container" style="margin-top: 20px; text-align: left;">
+        <div class="search-wrapper">
+            <form method="GET" action="{{ url_for('account_conversion_index') }}">
+                <div class="search-input-group">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" name="search" class="styled-search" placeholder="Tìm kiếm Account, Khách hàng, Task..." value="{{ search_term or '' }}">
+                    {% if search_term %}
+                        <a href="{{ url_for('account_conversion_index') }}" class="clear-btn" title="Xóa tìm kiếm">✕</a>
+                    {% endif %}
+                </div>
+                <button type="submit" class="btn-search-submit">Tìm kiếm</button>
+            </form>
+        </div>
+    </div>
+    
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Account</th>
+                    <th>Task</th>
+                    <th>Hệ số (Index)</th>
+                    <th>Đơn vị</th>
+                    <th>Hiệu lực từ</th>
+                    <th>Đến ngày</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if indices and indices.items %}
+                {% for idx in indices.items %}
+                <tr>
+                    <td>{{ idx.id }}</td>
+                    <td>
+                        <strong>{{ idx.account.account_code }}</strong>
+                        <br>
+                        <small style="color: #666;">{{ idx.account.customer.customer_name }}</small>
+                    </td>
+                    <td>{{ idx.task.task_name }} <br><small>({{ idx.task.task_code }})</small></td>
+                    <td>{{ idx.conversion_index }}</td>
+                    <td>{{ idx.unit or '' }}</td>
+                    <td>{{ idx.effective_from.strftime('%d/%m/%Y') }}</td>
+                    <td>{{ idx.effective_to.strftime('%d/%m/%Y') if idx.effective_to else '...' }}</td>
+                    <td>
+                        <button class="btn-edit" 
+                                data-id="{{ idx.id }}"
+                                data-account-id="{{ idx.account_id }}"
+                                data-task-id="{{ idx.task_id }}"
+                                data-index="{{ idx.conversion_index }}"
+                                data-unit="{{ idx.unit or '' }}"
+                                data-from="{{ idx.effective_from }}"
+                                data-to="{{ idx.effective_to or '' }}"
+                                onclick="openEditModal(this)">Sửa</button>
+                        <button class="btn-delete" onclick="confirmDelete('{{ idx.id }}')">Xóa</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 20px;">Không tìm thấy dữ liệu nào.</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        {% if indices and indices.pages > 1 %}
+        <div class="pagination">
+            {% if indices.has_prev %}
+                <a href="{{ url_for('account_conversion_index', page=indices.prev_num, search=search_term) }}">&laquo; Trước</a>
+            {% else %}
+                <span class="disabled">&laquo; Trước</span>
+            {% endif %}
+            {% for page_num in indices.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                    {% if indices.page == page_num %}
+                        <span class="active">{{ page_num }}</span>
+                    {% else %}
+                        <a href="{{ url_for('account_conversion_index', page=page_num, search=search_term) }}">{{ page_num }}</a>
+                    {% endif %}
+                {% else %}
+                    <span class="disabled">...</span>
+                {% endif %}
+            {% endfor %}
+            {% if indices.has_next %}
+                <a href="{{ url_for('account_conversion_index', page=indices.next_num, search=search_term) }}">Sau &raquo;</a>
+            {% else %}
+                <span class="disabled">Sau &raquo;</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal -->
+<div id="addModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="document.getElementById('addModal').style.display='none'">&times;</span>
+    <h2 id="modalTitle" style="margin-top: 0; text-align: center;">Thêm Định mức</h2>
+    <form method="POST" action="{{ url_for('account_conversion_index') }}">
+      <div class="form-group">
+        <label>Account (*)</label>
+        <select name="account_id" id="accountSelect" required onchange="loadTasks(this.value)">
+            <option value="">-- Chọn Account --</option>
+            {% for acc in accounts %}
+            <option value="{{ acc.id }}">{{ acc.account_code }} - {{ acc.account_name }}</option>
+            {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Task (*)</label>
+        <select name="task_id" id="taskSelect" required>
+            <option value="">-- Vui lòng chọn Account trước --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Hệ số chuyển đổi (Index) (*)</label>
+        <input type="number" step="0.001" name="conversion_index" required placeholder="VD: 1.500">
+      </div>
+      <div class="form-group">
+        <label>Đơn vị tính</label>
+        <input type="text" name="unit" placeholder="VD: Tấn, Giờ, Pallet">
+      </div>
+      <div class="form-group">
+        <label>Hiệu lực từ ngày (*)</label>
+        <input type="date" name="effective_from" required>
+      </div>
+      <div class="form-group">
+        <label>Đến ngày (Bỏ trống nếu vô thời hạn)</label>
+        <input type="date" name="effective_to">
+      </div>
+      <button type="submit" class="btn-save">Lưu thông tin</button>
+    </form>
+  </div>
+</div>
+
+<script>
+window.onclick = function(event) { if (event.target == document.getElementById('addModal')) { document.getElementById('addModal').style.display = "none"; } }
+window.addEventListener('DOMContentLoaded', (event) => { const alerts = document.querySelectorAll('.alert'); if (alerts.length > 0) { setTimeout(() => { alerts.forEach(alert => { alert.style.transition = "opacity 0.5s ease"; alert.style.opacity = "0"; setTimeout(() => alert.remove(), 500); }); }, 3000); } });
+
+function loadTasks(accountId, selectedTaskId = null) { var taskSelect = document.getElementById('taskSelect'); taskSelect.innerHTML = '<option value="">Đang tải...</option>'; if (!accountId) { taskSelect.innerHTML = '<option value="">-- Vui lòng chọn Account trước --</option>'; return; } fetch('/api/tasks-by-account/' + accountId).then(response => response.json()).then(data => { taskSelect.innerHTML = '<option value="">-- Chọn Task --</option>'; data.forEach(task => { var option = document.createElement('option'); option.value = task.id; option.text = task.code + ' - ' + task.name; if (selectedTaskId && task.id == selectedTaskId) option.selected = true; taskSelect.appendChild(option); }); }); }
+
+function openAddModal() { var modal = document.getElementById('addModal'); var form = modal.querySelector('form'); document.getElementById('modalTitle').innerText = "Thêm Định mức"; form.action = "{{ url_for('account_conversion_index') }}"; form.reset(); document.getElementById('taskSelect').innerHTML = '<option value="">-- Vui lòng chọn Account trước --</option>'; modal.style.display = "block"; }
+
+function openEditModal(btn) { var modal = document.getElementById('addModal'); var form = modal.querySelector('form'); document.getElementById('modalTitle').innerText = "Sửa Định mức"; form.action = "/account-conversion-index/edit/" + btn.getAttribute('data-id'); var accountId = btn.getAttribute('data-account-id'); form.querySelector('[name="account_id"]').value = accountId; loadTasks(accountId, btn.getAttribute('data-task-id')); form.querySelector('[name="conversion_index"]').value = btn.getAttribute('data-index'); form.querySelector('[name="unit"]').value = btn.getAttribute('data-unit'); form.querySelector('[name="effective_from"]').value = btn.getAttribute('data-from'); form.querySelector('[name="effective_to"]').value = btn.getAttribute('data-to'); modal.style.display = "block"; }
+
+function confirmDelete(id) { if (confirm("Bạn có chắc chắn muốn xóa định mức này không?")) { var form = document.createElement("form"); form.method = "POST"; form.action = "/account-conversion-index/delete/" + id; document.body.appendChild(form); form.submit(); } }
+</script>
+{% endblock %}
