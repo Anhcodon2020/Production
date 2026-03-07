@@ -203,6 +203,30 @@
         animation: spin 1s linear infinite;
         margin-bottom: 15px;
     }
+    .history-filter-panel {
+        display: none;
+        margin-bottom: 14px;
+    }
+    .history-filter-panel.show {
+        display: block;
+    }
+    .history-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .history-filter-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .history-filter-count {
+        font-size: 13px;
+        color: #718096;
+    }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 
@@ -336,6 +360,23 @@
     <div class="card">
         <div class="card-header">
             <span>Lịch sử Import (Gần đây)</span>
+            <button type="button" class="btn btn-outline" id="toggleHistoryFilter" style="padding: 6px 12px;">
+                <i class="fa fa-filter"></i> Filter
+            </button>
+        </div>
+        <div id="historyFilterPanel" class="history-filter-panel">
+            <div class="history-filter-grid">
+                <input id="historyFilterContainer" type="text" class="form-control" placeholder="Lọc Số Cont/Xe">
+                <input id="historyFilterTask" type="text" class="form-control" placeholder="Lọc Task">
+                <input id="historyFilterAccount" type="text" class="form-control" placeholder="Lọc Account">
+                <input id="historyFilterCustomer" type="text" class="form-control" placeholder="Lọc Khách hàng">
+            </div>
+            <div class="history-filter-actions">
+                <button type="button" class="btn btn-outline" id="historyFilterReset" style="padding: 6px 12px;">
+                    <i class="fa fa-refresh"></i> Xóa bộ lọc
+                </button>
+                <span id="historyFilterCount" class="history-filter-count"></span>
+            </div>
         </div>
         <div class="table-responsive">
             <table>
@@ -350,10 +391,16 @@
                         <th>Khách hàng</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="historyTableBody">
                     {% if records and records.items %}
                         {% for item in records.items %}
-                        <tr>
+                        <tr
+                            data-history-row="1"
+                            data-container="{{ (item.ref_no or '')|lower }}"
+                            data-task="{{ (item.task_id|string or '')|lower }}"
+                            data-account="{{ (item.account_id|string or '')|lower }}"
+                            data-customer="{{ (item.customer_id|string or '')|lower }}"
+                        >
                             <td>{{ item.id }}</td>
                             <td>{{ item.work_date.strftime('%d/%m/%Y') if item.work_date else '' }}</td>
                             <td>{{ item.ref_no }}</td>
@@ -628,5 +675,74 @@
         progressWrapper.style.display = 'none';
         document.getElementById('loadingOverlay').style.display = 'none';
     }
+
+    function initHistoryFilter() {
+        var panel = document.getElementById('historyFilterPanel');
+        var toggleBtn = document.getElementById('toggleHistoryFilter');
+        var tableBody = document.getElementById('historyTableBody');
+        if (!panel || !toggleBtn || !tableBody) return;
+
+        var filterEls = {
+            container: document.getElementById('historyFilterContainer'),
+            task: document.getElementById('historyFilterTask'),
+            account: document.getElementById('historyFilterAccount'),
+            customer: document.getElementById('historyFilterCustomer')
+        };
+        var resetBtn = document.getElementById('historyFilterReset');
+        var resultCount = document.getElementById('historyFilterCount');
+        var rows = Array.from(tableBody.querySelectorAll('tr[data-history-row="1"]'));
+
+        function normalize(value) {
+            return (value || '').toString().trim().toLowerCase();
+        }
+
+        function applyFilters() {
+            var filters = {
+                container: normalize(filterEls.container.value),
+                task: normalize(filterEls.task.value),
+                account: normalize(filterEls.account.value),
+                customer: normalize(filterEls.customer.value)
+            };
+            var visibleCount = 0;
+
+            rows.forEach(function(row) {
+                var match =
+                    (!filters.container || (row.dataset.container || '').includes(filters.container)) &&
+                    (!filters.task || (row.dataset.task || '').includes(filters.task)) &&
+                    (!filters.account || (row.dataset.account || '').includes(filters.account)) &&
+                    (!filters.customer || (row.dataset.customer || '').includes(filters.customer));
+
+                row.style.display = match ? '' : 'none';
+                if (match) visibleCount++;
+            });
+
+            resultCount.textContent = 'Hiển thị ' + visibleCount + '/' + rows.length + ' dòng';
+        }
+
+        toggleBtn.addEventListener('click', function() {
+            panel.classList.toggle('show');
+            var showing = panel.classList.contains('show');
+            toggleBtn.innerHTML = showing ? '<i class="fa fa-filter"></i> Ẩn Filter' : '<i class="fa fa-filter"></i> Filter';
+        });
+
+        Object.keys(filterEls).forEach(function(key) {
+            filterEls[key].addEventListener('input', applyFilters);
+            filterEls[key].addEventListener('change', applyFilters);
+        });
+
+        if (resetBtn) {
+            resetBtn.addEventListener('click', function() {
+                filterEls.container.value = '';
+                filterEls.task.value = '';
+                filterEls.account.value = '';
+                filterEls.customer.value = '';
+                applyFilters();
+            });
+        }
+
+        applyFilters();
+    }
+
+    initHistoryFilter();
 </script>
 {% endblock %}
