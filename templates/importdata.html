@@ -235,9 +235,14 @@
     <!-- Header -->
     <div class="page-header">
         <h1 class="page-title">Import Dữ Liệu</h1>
-        <a href="{{ url_for('download_template') }}" class="btn btn-outline">
-            <i class="fa fa-download"></i> Tải Template Mẫu
-        </a>
+        <div style="display: flex; gap: 10px;">
+            <a href="{{ url_for('export_data') }}" class="btn btn-success">
+                <i class="fa fa-file-excel-o"></i> Xuất Excel
+            </a>
+            <a href="{{ url_for('download_template') }}" class="btn btn-outline">
+                <i class="fa fa-download"></i> Tải Template Mẫu
+            </a>
+        </div>
     </div>
 
     <!-- Upload Section -->
@@ -404,7 +409,7 @@
                             <td>{{ item.id }}</td>
                             <td>{{ item.work_date.strftime('%d/%m/%Y') if item.work_date else '' }}</td>
                             <td>{{ item.ref_no }}</td>
-                            <td>{{ "{:,.2f}".format(item.quantity) if item.quantity else 0 }} {{ item.unit }}</td>
+                            <td>{{ "{:,.2f}".format(item.productivity_value) if item.productivity_value else 0 }} {{ item.unit }}</td>
                             <td>{{ item.task_id }}</td>
                             <td>{{ item.account_id }}</td>
                             <td>{{ item.customer_id }}</td>

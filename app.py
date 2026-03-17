@@ -1887,6 +1887,54 @@ def export_anchung():
     output.seek(0)
     return send_file(output, as_attachment=True, download_name=f'AnChung_{datetime.now().strftime("%Y%m%d")}.xlsx')
 
+@app.route('/export-data')
+@login_required
+@update_required
+def export_data():
+    try:
+        # Lấy dữ liệu từ bảng LaborProductivity, sắp xếp ngày mới nhất lên đầu
+        records = LaborProductivity.query.order_by(LaborProductivity.work_date.desc(), LaborProductivity.id.desc()).all()
+        
+        data = []
+        for r in records:
+            data.append({
+                'ID': r.id,
+                'Ngày làm việc': r.work_date,
+                'Số Cont/Xe': r.ref_no,
+                'Sản lượng (CBM)': r.productivity_value,
+                'Đơn vị': r.unit,
+                'Hệ số': r.conversion_index,
+                'Quy đổi': r.quantity,
+                'Tally': r.tally_id,
+                'Xe Nâng': r.xenang_id,
+                'Công nhân 1': r.congnhan1_id,
+                'Công nhân 2': r.congnhan2_id,
+                'Công nhân 3': r.congnhan3_id,
+                'Công nhân 4': r.congnhan4_id,
+                'Công nhân 5': r.congnhan5_id,
+                'Công nhân 6': r.congnhan6_id,
+                'Task': r.task_id,
+                'Account': r.account_id,
+                'Khách hàng': r.customer_id
+            })
+        
+        df = pd.DataFrame(data)
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='ImportHistory')
+            # Tự động điều chỉnh độ rộng cột (cơ bản)
+            worksheet = writer.sheets['ImportHistory']
+            for column_cells in worksheet.columns:
+                worksheet.column_dimensions[column_cells[0].column_letter].width = 20
+                
+        output.seek(0)
+        return send_file(output, as_attachment=True, download_name=f"ImportHistory_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")
+    except Exception as e:
+        print(f"Export Error: {e}")
+        flash(f'Lỗi khi xuất dữ liệu: {str(e)}', 'danger')
+        return redirect(url_for('import_data'))
+
 @app.route('/import-data/template')
 @login_required
 @update_required
