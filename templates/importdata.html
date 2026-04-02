@@ -522,7 +522,7 @@
                     toast: true,
                     position: 'top-end',
                     icon: '{{ "error" if category == "danger" else category }}',
-                    title: '{{ message }}',
+                    html: {{ message|tojson }},
                     showConfirmButton: false,
                     timer: 3000,
                     timerProgressBar: true
@@ -537,14 +537,21 @@
     const fileNameDisplay = document.getElementById('fileName');
     
     fileInput.addEventListener('change', function() {
-        if (this.files && this.files.length > 0) {
-            fileNameDisplay.textContent = "Đã chọn: " + this.files[0].name;
+        const file = this.files[0];
+        if (file) {
+            const fileName = file.name;
+            const extension = fileName.split('.').pop().toLowerCase();
+            
+            if (!['xlsx', 'xls'].includes(extension)) {
+                Swal.fire('Định dạng không hỗ trợ', 'Vui lòng chỉ chọn file Excel (.xlsx hoặc .xls)', 'error');
+                this.value = ''; // Reset input
+                fileNameDisplay.textContent = "Chỉ chấp nhận file .xlsx, .xls";
+                return;
+            }
+            
+            fileNameDisplay.textContent = "Đã chọn: " + fileName;
             fileNameDisplay.style.color = "#2ecc71";
             fileNameDisplay.style.fontWeight = "bold";
-        } else {
-            fileNameDisplay.textContent = "Chỉ chấp nhận file .xlsx, .xls";
-            fileNameDisplay.style.color = "#718096";
-            fileNameDisplay.style.fontWeight = "normal";
         }
     });
 
@@ -645,8 +652,12 @@
 
         xhr.onload = function() {
             if (xhr.status === 200) {
+                // Thay thế document.write bằng cách gán innerHTML để tránh lỗi "Invalid or unexpected token"
+                // và giúp trình duyệt xử lý chuỗi HTML lớn ổn định hơn
+                const parser = new DOMParser();
+                const newDoc = parser.parseFromString(xhr.responseText, 'text/html');
                 document.open();
-                document.write(xhr.responseText);
+                document.write(newDoc.documentElement.outerHTML);
                 document.close();
             } else {
                 Swal.fire({

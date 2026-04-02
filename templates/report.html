@@ -304,7 +304,7 @@
                     toast: true,
                     position: 'top-end',
                     icon: '{{ "error" if category == "danger" else category }}',
-                    title: '{{ message }}',
+                    html: {{ message|tojson }},
                     showConfirmButton: false,
                     timer: 3000,
                     timerProgressBar: true

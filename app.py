@@ -687,6 +687,10 @@ def import_data():
                 # Sử dụng engine openpyxl để đảm bảo đọc tốt file xlsx
                 df = pd.read_excel(file, engine='openpyxl')
 
+                if df.empty:
+                    flash('Lỗi: File Excel không có dữ liệu hoặc bảng tính trống.', 'danger')
+                    return redirect(request.url)
+
                 # --- 1. ĐỊNH NGHĨA MAPPING CỘT (Hỗ trợ nhiều cách gọi tên) ---
                 col_map = {
                     'date': 'date', 'ngày': 'date', 'ngay': 'date', 'work date': 'date', 'ngay lam viec': 'date',
@@ -750,14 +754,25 @@ def import_data():
                 if missing:
                     flash(f'Lỗi file: Không tìm thấy các cột bắt buộc: {", ".join(missing)}.<br>Vui lòng kiểm tra lại tên cột trong file Excel.', 'danger')
                     return redirect(request.url)
-                
+
                 # Xử lý cột Date: chuyển đổi chuỗi sang datetime (hỗ trợ DD/MM/YYYY)
                 if 'date' in df.columns:
-                    df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
+                    try:
+                        df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
+                        # Kiểm tra xem có bao nhiêu dòng ngày tháng bị lỗi (NaT)
+                        nat_count = df['date'].isna().sum()
+                        if nat_count > 0 and len(df) > nat_count:
+                            flash(f'Cảnh báo: Phát hiện {nat_count} dòng có định dạng ngày tháng không hợp lệ.', 'warning')
+                        elif nat_count == len(df):
+                             flash('Lỗi: Toàn bộ cột Ngày tháng không đúng định dạng (VD chuẩn: 25/12/2023).', 'danger')
+                             return redirect(request.url)
+                    except Exception as date_err:
+                        flash(f'Lỗi xử lý cột ngày tháng: {str(date_err)}', 'danger')
+                        return redirect(request.url)
 
                 # Xử lý NaN thành None để tránh lỗi DB (chuyển sang object để giữ None)
                 df = df.where(pd.notnull(df), None)
-                
+
                 # Xóa dữ liệu tạm cũ trước khi import mới
                 db.session.query(LaborProductivityTemp).delete()
                 
