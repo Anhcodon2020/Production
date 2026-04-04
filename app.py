@@ -6,7 +6,7 @@ from functools import wraps
 import pandas as pd
 from datetime import datetime
 import warnings
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import text
 from sqlalchemy import or_
@@ -681,6 +681,23 @@ def import_data():
             flash('Chưa chọn file.', 'danger')
             return redirect(request.url)
             
+        upload_from_date_str = request.form.get('upload_from_date')
+        upload_to_date_str = request.form.get('upload_to_date')
+        
+        if not upload_from_date_str or not upload_to_date_str:
+            flash('Vui lòng chọn khoảng thời gian của file trước khi upload.', 'danger')
+            return redirect(request.url)
+
+        try:
+            upload_from_date = datetime.strptime(upload_from_date_str, '%Y-%m-%d').date()
+            upload_to_date = datetime.strptime(upload_to_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Định dạng ngày chọn không hợp lệ.', 'danger')
+            return redirect(request.url)
+            
+        session['upload_from_date'] = upload_from_date_str
+        session['upload_to_date'] = upload_to_date_str
+            
         if file and file.filename.endswith(('.xlsx', '.xls')):
             try:
                 # Đọc file Excel bằng pandas
@@ -838,6 +855,17 @@ def import_data():
     has_errors = False
 
     if temp_records:
+        upload_from_date_str = session.get('upload_from_date')
+        upload_to_date_str = session.get('upload_to_date')
+        upload_from_date = None
+        upload_to_date = None
+        
+        try:
+            if upload_from_date_str: upload_from_date = datetime.strptime(upload_from_date_str, '%Y-%m-%d').date()
+            if upload_to_date_str: upload_to_date = datetime.strptime(upload_to_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+
         # Tạo một map để kiểm tra hiệu quả: { 'customer_name_lower': {'account_name_lower', ...} }
         customer_accounts_map = {}
         all_accounts = CustomerAccount.query.join(Customer).with_entities(Customer.customer_name, CustomerAccount.account_name).all()
@@ -857,14 +885,38 @@ def import_data():
             if not cust_name or not acc_name or cust_name not in customer_accounts_map or acc_name not in customer_accounts_map.get(cust_name, set()):
                 is_row_valid = False
                 has_errors = True
+                
+            # Kiểm tra ngày hợp lệ nằm trong khoảng đã chọn
+            if upload_from_date and upload_to_date:
+                if not t.date or t.date < upload_from_date or t.date > upload_to_date:
+                    is_row_valid = False
+                    has_errors = True
             
             preview_data.append({'record': t, 'is_valid': is_row_valid})
     
     # Lấy dữ liệu chính thức để hiển thị (phân trang)
     page = request.args.get('page', 1, type=int)
-    records = LaborProductivity.query.order_by(LaborProductivity.id.desc()).paginate(page=page, per_page=20, error_out=False)
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
     
-    return render_template('importdata.html', records=records, preview_data=preview_data, has_errors=has_errors)
+    query = LaborProductivity.query
+    if from_date:
+        try:
+            fd = datetime.strptime(from_date, '%Y-%m-%d').date()
+            query = query.filter(LaborProductivity.work_date >= fd)
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            td = datetime.strptime(to_date, '%Y-%m-%d').date()
+            query = query.filter(LaborProductivity.work_date <= td)
+        except ValueError:
+            pass
+
+    records = query.order_by(LaborProductivity.id.desc()).paginate(page=page, per_page=20, error_out=False)
+    
+    today_date = datetime.now().strftime('%Y-%m-%d')
+    return render_template('importdata.html', records=records, preview_data=preview_data, has_errors=has_errors, from_date=from_date, to_date=to_date, today_date=today_date)
 
 @app.route('/import-data/confirm', methods=['POST'])
 @login_required
@@ -1303,6 +1355,9 @@ def delete_productivity(id):
 def report():
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
+    active_tab = request.args.get('active_tab', 'tab-employee')
+    search_emp_code = request.args.get('search_emp_code', '').strip()
+    search_account_id = request.args.get('search_account_id', '').strip()
     
     # Nếu không chọn ngày, mặc định từ 26 tháng trước đến 25 tháng hiện tại
     if not from_date and not to_date:
@@ -1467,7 +1522,53 @@ def report():
     an_chung_summary_list = list(summary_map.values())
     an_chung_summary_list.sort(key=lambda x: x['full_name'])
 
-    return render_template('report.html', records=records, summary=summary, top_employees=top_employees, customer_summary=customer_summary, an_chung_data=an_chung_data, an_chung_summary_list=an_chung_summary_list, from_date=from_date, to_date=to_date)
+    # --- TỔNG HỢP CHO TAB SEARCH (TRA CỨU CHUYÊN SÂU) ---
+    search_results = []
+    total_search_qty = 0.0
+    daily_search_summary = []
+    if search_emp_code or search_account_id:
+        search_query = LaborProductivity.query
+        
+        if from_date:
+            search_query = search_query.filter(LaborProductivity.work_date >= from_date)
+        if to_date:
+            search_query = search_query.filter(LaborProductivity.work_date <= to_date)
+            
+        if search_account_id:
+            search_query = search_query.filter(LaborProductivity.account_id == search_account_id)
+            
+        if search_emp_code:
+            search_query = search_query.filter(
+                or_(
+                    LaborProductivity.tally_id.ilike(f'%{search_emp_code}%'),
+                    LaborProductivity.xenang_id.ilike(f'%{search_emp_code}%'),
+                    LaborProductivity.congnhan1_id.ilike(f'%{search_emp_code}%'),
+                    LaborProductivity.congnhan2_id.ilike(f'%{search_emp_code}%'),
+                    LaborProductivity.congnhan3_id.ilike(f'%{search_emp_code}%'),
+                    LaborProductivity.congnhan4_id.ilike(f'%{search_emp_code}%'),
+                    LaborProductivity.congnhan5_id.ilike(f'%{search_emp_code}%'),
+                    LaborProductivity.congnhan6_id.ilike(f'%{search_emp_code}%')
+                )
+            )
+            
+        search_results = search_query.order_by(LaborProductivity.work_date.desc()).all()
+        
+        daily_dict = {}
+        for r in search_results:
+            qty = r.quantity if r.quantity is not None else 0.0
+            total_search_qty += qty
+            
+            d_key = r.work_date.strftime('%Y-%m-%d') if r.work_date else 'N/A'
+            d_display = r.work_date.strftime('%d/%m/%Y') if r.work_date else 'N/A'
+            if d_key not in daily_dict:
+                daily_dict[d_key] = {'date': d_display, 'sort_key': d_key, 'total_qty': 0.0, 'count': 0}
+            daily_dict[d_key]['total_qty'] += qty
+            daily_dict[d_key]['count'] += 1
+            
+        daily_search_summary = list(daily_dict.values())
+        daily_search_summary.sort(key=lambda x: x['sort_key'], reverse=True)
+
+    return render_template('report.html', records=records, summary=summary, top_employees=top_employees, customer_summary=customer_summary, an_chung_data=an_chung_data, an_chung_summary_list=an_chung_summary_list, from_date=from_date, to_date=to_date, active_tab=active_tab, search_emp_code=search_emp_code, search_account_id=search_account_id, search_results=search_results, total_search_qty=total_search_qty, daily_search_summary=daily_search_summary)
 
 @app.route('/report/export')
 @login_required
@@ -1566,6 +1667,7 @@ def export_report():
     ac_map, an_chung_summary_map = build_maps(an_chung_emps)
 
     an_chung_detail_data = []
+    khoan_detail_data = []
     for r in records:
         workers = [
             r.tally_id,
@@ -1621,19 +1723,23 @@ def export_report():
             if matched_account:
                 summary_map[row_key][matched_account] += raw_cbm
 
+            detail_item = {
+                'Ngày': r.work_date,
+                'Mã NV': emp.employee_code,
+                'MS': emp.masl,
+                'Họ và tên': emp.full_name,
+                'Vị trí': emp.position,
+                'Task': r.task_id,
+                'Account': r.account_id,
+                'Khách hàng': r.customer_id,
+                'CBM chưa hệ số': raw_cbm,
+                'CBM có hệ số': converted_cbm,
+            }
+
             if group == 'an_chung':
-                an_chung_detail_data.append({
-                    'Ng?y': r.work_date,
-                    'M? NV': emp.employee_code,
-                    'MS': emp.masl,
-                    'H? v? t?n': emp.full_name,
-                    'V? tr?': emp.position,
-                    'Task': r.task_id,
-                    'Account': r.account_id,
-                    'Kh?ch h?ng': r.customer_id,
-                    'CBM ch?a h? s?': raw_cbm,
-                    'CBM c? h? s?': converted_cbm,
-                })
+                an_chung_detail_data.append(detail_item)
+            elif group == 'khoan':
+                khoan_detail_data.append(detail_item)
 
     summary_rows_khoan = list(khoan_summary_map.values())
     summary_rows_khoan.sort(key=lambda x: (x['full_name'] or '').lower())
@@ -1685,6 +1791,7 @@ def export_report():
 
     df_detail = pd.DataFrame(detail_data)
     df_anchung = pd.DataFrame(an_chung_detail_data)
+    df_khoan_chitiet = pd.DataFrame(khoan_detail_data)
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -1799,7 +1906,9 @@ def export_report():
 
         df_summary_template_khoan.to_excel(writer, index=False, sheet_name='TongHopKhoanRaw')
         df_summary_template_an_chung.to_excel(writer, index=False, sheet_name='TongHopAnChungRaw')
-        df_detail.to_excel(writer, index=False, sheet_name='ChiTiet')
+        df_detail.to_excel(writer, index=False, sheet_name='ChiTiet_LogGoc')
+        if not df_khoan_chitiet.empty:
+            df_khoan_chitiet.to_excel(writer, index=False, sheet_name='Khoan_ChiTiet')
         if not df_anchung.empty:
             df_anchung.to_excel(writer, index=False, sheet_name='An_Chung_ChiTiet')
 

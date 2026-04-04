@@ -228,6 +228,13 @@
         color: #718096;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* Dynamic state classes */
+    .border-error { border-left: 4px solid #e74c3c !important; }
+    .border-success { border-left: 4px solid #2ecc71 !important; }
+    .text-error { color: #e74c3c !important; }
+    .text-success { color: #2ecc71 !important; }
+    .row-error { background-color: #fff5f5 !important; }
 </style>
 
 <div style="width: 95%; max-width: 1200px; margin: 0 auto;">
@@ -251,6 +258,22 @@
             <span>Upload File Excel</span>
         </div>
         <form id="uploadForm" method="POST" action="{{ url_for('import_data') }}" enctype="multipart/form-data">
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #2c3e50;">Khoảng thời gian làm việc của file (*)</h3>
+                <p style="font-size: 13px; color: #718096; margin-top: 0; margin-bottom: 10px;">Chỉ cho phép upload dữ liệu có ngày làm việc nằm trong khoảng này. Các dòng sai ngày sẽ bị từ chối.</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px;">Từ ngày:</label>
+                        <input type="date" name="upload_from_date" id="upload_from_date" class="form-control" required max="{{ today_date }}" onchange="updateUploadToDateMin()">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px;">Đến ngày:</label>
+                        <input type="date" name="upload_to_date" id="upload_to_date" class="form-control" required max="{{ today_date }}">
+                    </div>
+                </div>
+            </div>
+
             <div class="upload-zone" id="dropZone">
                 <input type="file" name="file" id="fileInput" accept=".xlsx, .xls" required>
                 <div class="upload-icon">📂</div>
@@ -275,9 +298,9 @@
 
     <!-- Preview Section (Only shows if data exists) -->
     {% if preview_data %}
-    <div class="card" style="border-left: 4px solid {{ '#e74c3c' if has_errors else '#2ecc71' }};">
+    <div class="card {{ 'border-error' if has_errors else 'border-success' }}">
         <div class="card-header">
-            <span style="color: {{ '#e74c3c' if has_errors else '#2ecc71' }};">
+            <span class="{{ 'text-error' if has_errors else 'text-success' }}">
                 {{ '⚠️ Phát hiện lỗi dữ liệu' if has_errors else '✅ Dữ liệu hợp lệ' }}
             </span>
             <div>
@@ -294,7 +317,7 @@
         
         {% if has_errors %}
         <div style="background-color: #fff5f5; color: #c53030; padding: 15px; border-radius: 6px; margin-bottom: 20px; font-size: 14px;">
-            <strong>Lưu ý:</strong> Các dòng màu đỏ chứa thông tin không hợp lệ (Khách hàng hoặc Account không tồn tại). Vui lòng chỉnh sửa hoặc xóa trước khi lưu.
+            <strong>Lưu ý:</strong> Các dòng màu đỏ chứa thông tin không hợp lệ (Khách hàng/Account không tồn tại hoặc <b>Ngày làm việc nằm ngoài khoảng đã thiết lập</b>). Vui lòng chỉnh sửa ngày hoặc xóa trước khi lưu.
         </div>
         {% endif %}
 
@@ -315,7 +338,7 @@
                 </thead>
                 <tbody>
                     {% for item in preview_data %}
-                    <tr style="{{ 'background-color: #fff5f5;' if not item.is_valid else '' }}">
+                    <tr class="{{ 'row-error' if not item.is_valid else '' }}">
                         <td>
                             {% if item.is_valid %}
                                 <span class="status-badge status-ok">OK</span>
@@ -369,16 +392,36 @@
                 <i class="fa fa-filter"></i> Filter
             </button>
         </div>
+        <!-- Date filter form (Backend) -->
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+            <form method="GET" action="{{ url_for('import_data') }}" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px;">Từ ngày:</label>
+                    <input type="date" name="from_date" id="from_date" class="form-control" value="{{ from_date or '' }}" max="{{ today_date }}" onchange="updateToDateMin()">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px;">Đến ngày:</label>
+                    <input type="date" name="to_date" id="to_date" class="form-control" value="{{ to_date or '' }}" max="{{ today_date }}">
+                </div>
+                <div>
+                    <button type="submit" class="btn btn-primary" style="padding: 8px 16px; margin-right: 5px;"><i class="fa fa-search"></i> Lọc dữ liệu</button>
+                    {% if from_date or to_date %}
+                    <a href="{{ url_for('import_data') }}" class="btn btn-outline" style="padding: 8px 16px;"><i class="fa fa-refresh"></i> Hủy lọc</a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+
         <div id="historyFilterPanel" class="history-filter-panel">
             <div class="history-filter-grid">
-                <input id="historyFilterContainer" type="text" class="form-control" placeholder="Lọc Số Cont/Xe">
+                <input id="historyFilterContainer" type="text" class="form-control" placeholder="Lọc Số Cont/Xe (Trang hiện tại)">
                 <input id="historyFilterTask" type="text" class="form-control" placeholder="Lọc Task">
                 <input id="historyFilterAccount" type="text" class="form-control" placeholder="Lọc Account">
                 <input id="historyFilterCustomer" type="text" class="form-control" placeholder="Lọc Khách hàng">
             </div>
             <div class="history-filter-actions">
                 <button type="button" class="btn btn-outline" id="historyFilterReset" style="padding: 6px 12px;">
-                    <i class="fa fa-refresh"></i> Xóa bộ lọc
+                    <i class="fa fa-refresh"></i> Xóa bộ lọc trang
                 </button>
                 <span id="historyFilterCount" class="history-filter-count"></span>
             </div>
@@ -416,7 +459,7 @@
                         </tr>
                         {% endfor %}
                     {% else %}
-                        <tr><td colspan="7" style="text-align: center; padding: 30px; color: #718096;">Chưa có dữ liệu nào được import.</td></tr>
+                        <tr><td colspan="7" style="text-align: center; padding: 30px; color: #718096;">Chưa có dữ liệu nào phù hợp.</td></tr>
                     {% endif %}
                 </tbody>
             </table>
@@ -427,7 +470,7 @@
         <div style="margin-top: 20px; display: flex; justify-content: center; gap: 5px;">
             {% for page_num in records.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
                 {% if page_num %}
-                    <a href="{{ url_for('import_data', page=page_num) }}" 
+                    <a href="{{ url_for('import_data', page=page_num, from_date=from_date, to_date=to_date) }}" 
                        class="btn {{ 'btn-primary' if page_num == records.page else 'btn-outline' }}"
                        style="padding: 5px 12px;">{{ page_num }}</a>
                 {% else %}
@@ -512,25 +555,37 @@
 
 <!-- Thêm thư viện SweetAlert2 -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<script id="flash-messages-data" type="application/json">
+    {{ messages | tojson | safe }}
+</script>
 <script>
     // SweetAlert Toast for Flash Messages
     document.addEventListener('DOMContentLoaded', function() {
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
+        const messagesData = document.getElementById('flash-messages-data');
+        if (messagesData) {
+            const messages = JSON.parse(messagesData.textContent);
+            messages.forEach(function(msg) {
+                const category = msg[0];
+                const message = msg[1];
                 Swal.fire({
                     toast: true,
                     position: 'top-end',
-                    icon: '{{ "error" if category == "danger" else category }}',
-                    html: {{ message|tojson }},
+                    icon: category === "danger" ? "error" : category,
+                    html: message,
                     showConfirmButton: false,
                     timer: 3000,
                     timerProgressBar: true
                 });
-            {% endfor %}
-        {% endif %}
-        {% endwith %}
+            });
+        }
     });
+</script>
+{% endif %}
+{% endwith %}
+
+<script>
 
     // File Input Handling
     const fileInput = document.getElementById('fileInput');
@@ -760,5 +815,37 @@
     }
 
     initHistoryFilter();
+    
+    function updateToDateMin() {
+        var fromDate = document.getElementById('from_date').value;
+        var toDateInput = document.getElementById('to_date');
+        if (fromDate) {
+            toDateInput.min = fromDate;
+            if (toDateInput.value && toDateInput.value < fromDate) {
+                toDateInput.value = fromDate;
+            }
+        } else {
+            toDateInput.min = '';
+        }
+    }
+
+    function updateUploadToDateMin() {
+        var fromDate = document.getElementById('upload_from_date').value;
+        var toDateInput = document.getElementById('upload_to_date');
+        if (fromDate) {
+            toDateInput.min = fromDate;
+            if (toDateInput.value && toDateInput.value < fromDate) {
+                toDateInput.value = fromDate;
+            }
+        } else {
+            toDateInput.min = '';
+        }
+    }
+    
+    // Khởi tạo trạng thái ban đầu của Từ ngày -> Đến ngày
+    document.addEventListener('DOMContentLoaded', function() {
+        updateToDateMin();
+        updateUploadToDateMin();
+    });
 </script>
 {% endblock %}

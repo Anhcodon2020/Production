@@ -1,0 +1,15 @@
+1526: flash('B?n kh?ng c? quy?n xu?t b?o c?o.', 'danger')
+1704: 'H? V? T?N': item['full_name'],
+1705: 'T?ng CBM C? H? S?': item['total_converted'],
+1706: 'T?ng CBM CH?A H? S?': item['total_raw'],
+1723: 'Ng?y nh?p h?ng': r.work_date,
+1724: 'S? xe/cont': r.ref_no,
+1728: 'Xe N?ng': r.xenang_id,
+1729: 'C?ng nh?n 1': r.congnhan1_id,
+1730: 'C?ng nh?n 2': r.congnhan2_id,
+1731: 'C?ng nh?n 3': r.congnhan3_id,
+1732: 'C?ng nh?n 4': r.congnhan4_id,
+1733: 'C?ng nh?n 5': r.congnhan5_id,
+1734: 'C?ng nh?n 6': r.congnhan6_id,
+1737: 'Kh?ch h?ng': r.customer_id,
+1776: ws['A4'] = 'H? S?'

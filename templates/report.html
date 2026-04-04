@@ -72,6 +72,7 @@
     <!-- Filter Bar -->
     <div class="filter-card">
         <form method="GET" action="{{ url_for('report') }}" class="filter-form">
+            <input type="hidden" name="active_tab" id="active_tab_input" value="{{ active_tab or 'tab-employee' }}">
             <div class="form-group">
                 <label style="margin-right: 5px; font-weight: 500;">Từ ngày:</label>
                 <input type="date" name="from_date" value="{{ from_date or '' }}" class="form-control">
@@ -92,14 +93,15 @@
 
     <!-- Tabs Navigation -->
     <div class="tabs">
-        <button class="tab-btn active" onclick="openTab(event, 'tab-employee')">Năng Suất Nhân Viên</button>
-        <button class="tab-btn" onclick="openTab(event, 'tab-customer')">Theo Khách Hàng</button>
-        <button class="tab-btn" onclick="openTab(event, 'tab-anchung')">Thống Kê Ăn Chung</button>
-        <button class="tab-btn" onclick="openTab(event, 'tab-detail')">Chi Tiết Nhật Ký</button>
+        <button class="tab-btn {% if not active_tab or active_tab == 'tab-employee' %}active{% endif %}" onclick="openTab(event, 'tab-employee')">Năng Suất Nhân Viên</button>
+        <button class="tab-btn {% if active_tab == 'tab-customer' %}active{% endif %}" onclick="openTab(event, 'tab-customer')">Theo Khách Hàng</button>
+        <button class="tab-btn {% if active_tab == 'tab-anchung' %}active{% endif %}" onclick="openTab(event, 'tab-anchung')">Thống Kê Ăn Chung</button>
+        <button class="tab-btn {% if active_tab == 'tab-detail' %}active{% endif %}" onclick="openTab(event, 'tab-detail')">Chi Tiết Nhật Ký</button>
+        <button class="tab-btn {% if active_tab == 'tab-search' %}active{% endif %}" onclick="openTab(event, 'tab-search')">Tra Cứu Năng Suất</button>
     </div>
 
     <!-- Tab 1: Employee Report -->
-    <div id="tab-employee" class="tab-content active">
+    <div id="tab-employee" class="tab-content {% if not active_tab or active_tab == 'tab-employee' %}active{% endif %}">
         {% if summary %}
         <div class="card">
             <div class="card-header">Biểu Đồ Top 5 Nhân Viên</div>
@@ -143,7 +145,7 @@
     </div>
 
     <!-- Tab 2: Customer Report -->
-    <div id="tab-customer" class="tab-content">
+    <div id="tab-customer" class="tab-content {% if active_tab == 'tab-customer' %}active{% endif %}">
         {% if customer_summary %}
         <div class="card">
             <div class="card-header">Biểu Đồ Tỷ Trọng Khách Hàng</div>
@@ -183,7 +185,7 @@
     </div>
 
     <!-- Tab 3: An Chung Report -->
-    <div id="tab-anchung" class="tab-content">
+    <div id="tab-anchung" class="tab-content {% if active_tab == 'tab-anchung' %}active{% endif %}">
         {% if an_chung_summary_list %}
         <div class="card">
             <div class="card-header">Tổng Hợp Nhân Viên Ăn Chung</div>
@@ -224,7 +226,7 @@
     </div>
 
     <!-- Tab 4: Detail Report -->
-    <div id="tab-detail" class="tab-content">
+    <div id="tab-detail" class="tab-content {% if active_tab == 'tab-detail' %}active{% endif %}">
         {% if records %}
         <div class="card">
             <div class="card-header">Nhật Ký Làm Việc Chi Tiết</div>
@@ -269,6 +271,120 @@
         </div>
         {% endif %}
     </div>
+
+    <!-- Tab 5: Search Report -->
+    <div id="tab-search" class="tab-content {% if active_tab == 'tab-search' %}active{% endif %}">
+        <div class="filter-card" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+            <form method="GET" action="{{ url_for('report') }}" class="filter-form" style="width: 100%;">
+                <input type="hidden" name="active_tab" value="tab-search">
+                <div class="form-group">
+                    <label style="margin-right: 5px; font-weight: 500;">Từ ngày:</label>
+                    <input type="date" name="from_date" value="{{ from_date or '' }}" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label style="margin-right: 5px; font-weight: 500;">Đến ngày:</label>
+                    <input type="date" name="to_date" value="{{ to_date or '' }}" class="form-control">
+                </div>
+                
+                <h3 style="width: 100%; margin-top: 0; color: #2c3e50; font-size: 16px; border-bottom: 1px solid #ddd; padding-bottom: 10px;">Tra cứu chuyên sâu</h3>
+                
+                <div class="form-group">
+                    <label style="margin-right: 5px; font-weight: 500;">Mã NV / Tên NV:</label>
+                    <input type="text" name="search_emp_code" value="{{ search_emp_code or '' }}" class="form-control" placeholder="Nhập mã hoặc tên NV...">
+                </div>
+                
+                <div class="form-group">
+                    <label style="margin-right: 5px; font-weight: 500;">Account ID:</label>
+                    <input type="text" name="search_account_id" value="{{ search_account_id or '' }}" class="form-control" placeholder="Nhập Account ID...">
+                </div>
+                
+                <button type="submit" class="btn btn-primary"><i class="fa fa-search"></i> Tìm kiếm</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Kết Quả Tra Cứu</div>
+            {% if search_results %}
+            <div class="table-responsive" style="max-height: 600px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ngày</th>
+                            <th>Số Cont/Xe</th>
+                            <th>Task</th>
+                            <th>Account</th>
+                            <th>Sản Lượng</th>
+                            <th>Đơn vị</th>
+                            <th>Tally</th>
+                            <th>Xe Nâng</th>
+                            <th>Công Nhân</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in search_results %}
+                        <tr>
+                            <td>{{ r.work_date.strftime('%d/%m/%Y') if r.work_date else '' }}</td>
+                            <td>{{ r.ref_no }}</td>
+                            <td>{{ r.task_id }}</td>
+                            <td>{{ r.account_id }}</td>
+                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(r.quantity) if r.quantity else 0 }}</td>
+                            <td>{{ r.unit }}</td>
+                            <td>{{ r.tally_id or '' }}</td>
+                            <td>{{ r.xenang_id or '' }}</td>
+                            <td style="font-size: 13px; color: #555;">
+                                {{ [r.congnhan1_id, r.congnhan2_id, r.congnhan3_id, r.congnhan4_id, r.congnhan5_id, r.congnhan6_id] | select("ne", None) | join(", ") }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot style="background-color: #ebf8ff; font-weight: bold; border-top: 2px solid #cbd5e0;">
+                        <tr>
+                            <td colspan="4" style="text-align: right; padding-right: 15px; font-size: 15px;">Tổng Cộng:</td>
+                            <td style="color: #e53e3e; font-size: 15px;">{{ "{:,.2f}".format(total_search_qty) if total_search_qty else 0 }}</td>
+                            <td colspan="4"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="card-header" style="margin-top: 30px;">Nhật Ký Tóm Tắt Theo Ngày</div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ngày Làm Việc</th>
+                            <th>Tổng Số Đầu Việc (Cont/Xe)</th>
+                            <th>Tổng Sản Lượng (Quy Đổi)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in daily_search_summary %}
+                        <tr>
+                            <td style="font-weight: 600;">{{ d.date }}</td>
+                            <td>{{ d.count }}</td>
+                            <td style="color: #2980b9; font-weight: 600;">{{ "{:,.2f}".format(d.total_qty) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot style="background-color: #ebf8ff; font-weight: bold; border-top: 2px solid #cbd5e0;">
+                        <tr>
+                            <td colspan="2" style="text-align: right; padding-right: 15px; font-size: 15px;">Tổng Cộng Toàn Bộ:</td>
+                            <td style="color: #e53e3e; font-size: 15px;">{{ "{:,.2f}".format(total_search_qty) if total_search_qty else 0 }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% elif request.args.get('search_emp_code') or request.args.get('search_account_id') %}
+            <div style="text-align: center; padding: 40px; color: #718096;">
+                Không tìm thấy kết quả phù hợp.
+            </div>
+            {% else %}
+            <div style="text-align: center; padding: 40px; color: #718096;">
+                Vui lòng nhập thông tin để tra cứu chuyên sâu trong khoảng thời gian đang chọn.
+            </div>
+            {% endif %}
+        </div>
+    </div>
 </div>
 
 <!-- Thêm thư viện Chart.js -->
@@ -293,34 +409,57 @@
         document.getElementById(tabName).style.display = "block";
         document.getElementById(tabName).classList.add("active");
         evt.currentTarget.className += " active";
+        
+        var activeTabInput = document.getElementById("active_tab_input");
+        if(activeTabInput) {
+            activeTabInput.value = tabName;
+        }
     }
 
+</script>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<script id="flash-messages-data" type="application/json">
+    {{ messages | tojson | safe }}
+</script>
+<script>
     // Hiển thị thông báo Flash bằng SweetAlert2 Toast
     document.addEventListener('DOMContentLoaded', function() {
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
+        const messagesData = document.getElementById('flash-messages-data');
+        if (messagesData) {
+            const messages = JSON.parse(messagesData.textContent);
+            messages.forEach(function(msg) {
+                const category = msg[0];
+                const message = msg[1];
                 Swal.fire({
                     toast: true,
                     position: 'top-end',
-                    icon: '{{ "error" if category == "danger" else category }}',
-                    html: {{ message|tojson }},
+                    icon: category === "danger" ? "error" : category,
+                    html: message,
                     showConfirmButton: false,
                     timer: 3000,
                     timerProgressBar: true
                 });
-            {% endfor %}
-        {% endif %}
-        {% endwith %}
+            });
+        }
     });
+</script>
+{% endif %}
+{% endwith %}
 
-    {% if top_employees %}
+{% if top_employees %}
+<script id="top-employees-data" type="application/json">
+    {{ top_employees | tojson | safe }}
+</script>
+<script>
     document.addEventListener("DOMContentLoaded", function() {
         const ctx = document.getElementById('topEmployeesChart').getContext('2d');
         
         // Chuẩn bị dữ liệu từ server
-        const labels = [{% for item in top_employees %}"{{ item.name }} ({{ item.role }})",{% endfor %}];
-        const data = [{% for item in top_employees %}{{ item.total_qty }},{% endfor %}];
+        const topEmployeesData = JSON.parse(document.getElementById('top-employees-data').textContent);
+        const labels = topEmployeesData.map(item => `${item.name} (${item.role})`);
+        const data = topEmployeesData.map(item => Number(item.total_qty));
 
         new Chart(ctx, {
             type: 'bar',
@@ -347,13 +486,20 @@
             }
         });
     });
-    {% endif %}
+</script>
+{% endif %}
 
-    {% if customer_summary %}
+{% if customer_summary %}
+<script id="customer-summary-data" type="application/json">
+    {{ customer_summary | tojson | safe }}
+</script>
+<script>
     document.addEventListener("DOMContentLoaded", function() {
         const ctxCust = document.getElementById('customerChart').getContext('2d');
-        const labelsCust = [{% for item in customer_summary %}"{{ item.name }}",{% endfor %}];
-        const dataCust = [{% for item in customer_summary %}{{ item.total_qty }},{% endfor %}];
+        
+        const customerSummaryData = JSON.parse(document.getElementById('customer-summary-data').textContent);
+        const labelsCust = customerSummaryData.map(item => item.name);
+        const dataCust = customerSummaryData.map(item => Number(item.total_qty));
         
         const backgroundColors = [
             '#3498db', '#2ecc71', '#e74c3c', '#f1c40f', '#9b59b6', 
@@ -379,6 +525,6 @@
             }
         });
     });
-    {% endif %}
 </script>
+{% endif %}
 {% endblock %}
