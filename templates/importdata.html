@@ -235,9 +235,22 @@
     .text-error { color: #e74c3c !important; }
     .text-success { color: #2ecc71 !important; }
     .row-error { background-color: #fff5f5 !important; }
+    .import-alert {
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    .import-alert-danger {
+        background-color: #fff5f5;
+        color: #c53030;
+        border: 1px solid #fed7d7;
+    }
 </style>
 
 <div style="width: 95%; max-width: 1200px; margin: 0 auto;">
+    {% set flash_messages = get_flashed_messages(with_categories=true) %}
     
     <!-- Header -->
     <div class="page-header">
@@ -257,6 +270,22 @@
         <div class="card-header">
             <span>Upload File Excel</span>
         </div>
+        {% set ns = namespace(import_errors=[]) %}
+        {% for msg in flash_messages %}
+            {% if msg[0] in ['danger', 'warning'] %}
+                {% set ns.import_errors = ns.import_errors + [msg] %}
+            {% endif %}
+        {% endfor %}
+        {% if ns.import_errors %}
+        <div class="import-alert import-alert-danger" id="excelImportErrorBox">
+            <strong>Thông báo khi import file Excel:</strong>
+            <ul style="margin: 8px 0 0 18px; padding: 0;">
+                {% for msg in ns.import_errors %}
+                <li>{{ msg[1] | safe }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
         <form id="uploadForm" method="POST" action="{{ url_for('import_data') }}" enctype="multipart/form-data">
             
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
@@ -555,10 +584,9 @@
 
 <!-- Thêm thư viện SweetAlert2 -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-{% with messages = get_flashed_messages(with_categories=true) %}
-{% if messages %}
+{% if flash_messages %}
 <script id="flash-messages-data" type="application/json">
-    {{ messages | tojson | safe }}
+    {{ flash_messages | tojson | safe }}
 </script>
 <script>
     // SweetAlert Toast for Flash Messages
@@ -569,6 +597,9 @@
             messages.forEach(function(msg) {
                 const category = msg[0];
                 const message = msg[1];
+                if (category === "danger" || category === "warning") {
+                    return;
+                }
                 Swal.fire({
                     toast: true,
                     position: 'top-end',
@@ -583,7 +614,6 @@
     });
 </script>
 {% endif %}
-{% endwith %}
 
 <script>
 

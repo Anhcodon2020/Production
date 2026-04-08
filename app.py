@@ -1575,7 +1575,7 @@ def report():
 @view_required
 def export_report():
     if not current_user.can_export:
-        flash('B?n kh?ng c? quy?n xu?t b?o c?o.', 'danger')
+        flash('Bạn không có quyền xuất báo cáo.', 'danger')
         return redirect(url_for('report'))
 
     from_date = request.args.get('from_date')
@@ -1753,9 +1753,9 @@ def export_report():
                 'VTCV': item['position'],
                 'MSNV': item['employee_code'],
                 'MS': item['masl'],
-                'H? V? T?N': item['full_name'],
-                'T?ng CBM C? H? S?': item['total_converted'],
-                'T?ng CBM CH?A H? S?': item['total_raw'],
+                'HỌ VÀ TÊN': item['full_name'],
+                'Tổng CBM CÓ HỆ SỐ': item['total_converted'],
+                'Tổng CBM CHƯA HỆ SỐ': item['total_raw'],
                 **{cfg['title']: item[cfg['title']] for cfg in account_configs},
             }
             for idx, item in enumerate(summary_rows, 1)
@@ -1772,21 +1772,21 @@ def export_report():
 
         detail_data.append({
             'STT': idx,
-            'Ng?y nh?p h?ng': r.work_date,
-            'S? xe/cont': r.ref_no,
+            'Ngày nhập hàng': r.work_date,
+            'Số xe/cont': r.ref_no,
             'CBM': cbm_val,
             'Quantity': r.quantity,
             'Tally': r.tally_id,
-            'Xe N?ng': r.xenang_id,
-            'C?ng nh?n 1': r.congnhan1_id,
-            'C?ng nh?n 2': r.congnhan2_id,
-            'C?ng nh?n 3': r.congnhan3_id,
-            'C?ng nh?n 4': r.congnhan4_id,
-            'C?ng nh?n 5': r.congnhan5_id,
-            'C?ng nh?n 6': r.congnhan6_id,
+            'Xe Nâng': r.xenang_id,
+            'Công nhân 1': r.congnhan1_id,
+            'Công nhân 2': r.congnhan2_id,
+            'Công nhân 3': r.congnhan3_id,
+            'Công nhân 4': r.congnhan4_id,
+            'Công nhân 5': r.congnhan5_id,
+            'Công nhân 6': r.congnhan6_id,
             'Task': r.task_id,
             'Account': r.account_id,
-            'Kh?ch h?ng': r.customer_id,
+            'Khách hàng': r.customer_id,
         })
 
     df_detail = pd.DataFrame(detail_data)
@@ -1801,7 +1801,7 @@ def export_report():
         fill_header_left = PatternFill(fill_type='solid', fgColor='FFDAF2D0')
         fill_yellow = PatternFill(fill_type='solid', fgColor='FFFFFF00')
         total_data_cols = 7 + len(account_configs)
-        base_headers = ['STT', 'VTCV', 'MSNV', 'MS (NEU CO)', 'HO VA TEN', 'Tong CBM CO HE SO', 'CBM CHUA HE SO']
+        base_headers = ['STT', 'VTCV', 'MSNV', 'MS (NẾU CÓ)', 'HỌ VÀ TÊN', 'Tổng CBM CÓ HỆ SỐ', 'CBM CHƯA HỆ SỐ']
 
         def render_summary_sheet(ws, summary_rows, title_text):
             last_col_letter = get_column_letter(total_data_cols)
@@ -1825,7 +1825,7 @@ def export_report():
                 cell.border = thin_border
 
             ws.merge_cells('A4:G4')
-            ws['A4'] = 'H? S?'
+            ws['A4'] = 'HỆ SỐ'
             ws['A4'].font = Font(name='Times New Roman', size=11, bold=True)
             ws['A4'].alignment = Alignment(horizontal='center', vertical='center')
             ws['A4'].fill = fill_header_left
@@ -1899,10 +1899,10 @@ def export_report():
             ws.freeze_panes = 'A5'
 
         ws_khoan = wb.create_sheet('SAN_LUONG_KHOAN', 0)
-        render_summary_sheet(ws_khoan, summary_rows_khoan, 'TONG HOP SAN LUONG THANG - KHOAN')
+        render_summary_sheet(ws_khoan, summary_rows_khoan, 'TỔNG HỢP SẢN LƯỢNG THÁNG - KHOÁN')
 
         ws_an_chung = wb.create_sheet('SAN_LUONG_AN_CHUNG', 1)
-        render_summary_sheet(ws_an_chung, summary_rows_an_chung, 'TONG HOP SAN LUONG THANG - AN CHUNG')
+        render_summary_sheet(ws_an_chung, summary_rows_an_chung, 'TỔNG HỢP SẢN LƯỢNG THÁNG - ĂN CHUNG')
 
         df_summary_template_khoan.to_excel(writer, index=False, sheet_name='TongHopKhoanRaw')
         df_summary_template_an_chung.to_excel(writer, index=False, sheet_name='TongHopAnChungRaw')
