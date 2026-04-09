@@ -16,6 +16,7 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
+import math
 
 # Tắt cảnh báo UserWarning của openpyxl (thường gặp khi đọc file có Data Validation)
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -702,7 +703,7 @@ def import_data():
             try:
                 # Đọc file Excel bằng pandas
                 # Sử dụng engine openpyxl để đảm bảo đọc tốt file xlsx
-                df = pd.read_excel(file, engine='openpyxl')
+                df = pd.read_excel(file, engine='openpyxl', dtype=str)
 
                 if df.empty:
                     flash('Lỗi: File Excel không có dữ liệu hoặc bảng tính trống.', 'danger')
@@ -741,7 +742,7 @@ def import_data():
                 if match_count < 3:
                     file.seek(0)
                     # Đọc header=None để lấy dữ liệu thô
-                    df_raw = pd.read_excel(file, header=None, nrows=20, engine='openpyxl') 
+                    df_raw = pd.read_excel(file, header=None, nrows=20, engine='openpyxl', dtype=str) 
                     found_header_idx = -1
                     
                     for idx, row in df_raw.iterrows():
@@ -754,7 +755,7 @@ def import_data():
                     
                     if found_header_idx != -1:
                         file.seek(0)
-                        df = pd.read_excel(file, header=found_header_idx, engine='openpyxl')
+                        df = pd.read_excel(file, header=found_header_idx, engine='openpyxl', dtype=str)
 
                 # --- 3. ĐỔI TÊN CỘT VỀ CHUẨN (Standard Keys) ---
                 new_columns = []
@@ -810,6 +811,8 @@ def import_data():
                     if raw_cbm is not None:
                         try:
                             safe_cbm = float(raw_cbm)
+                            if math.isinf(safe_cbm) or math.isnan(safe_cbm):
+                                safe_cbm = 0.0
                         except (ValueError, TypeError):
                             safe_cbm = 0.0
 
